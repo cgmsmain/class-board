@@ -438,6 +438,47 @@
   </div>
 
 
+  <!-- ==================== 모달 2-B: 담임 선생님 알림장 전체 내용 읽기 전용 팝업 ==================== -->
+  <div id="noticeDetailModal" class="fixed inset-0 bg-slate-900/60 backdrop-blur-sm hidden items-center justify-center z-50 p-4">
+    <div class="bg-white rounded-3xl shadow-2xl border border-slate-200 max-w-xl w-full p-6 xl:p-8 transition-all max-h-[85vh] flex flex-col">
+      <div class="flex items-center justify-between border-b border-slate-100 pb-4 mb-4 shrink-0">
+        <div class="flex items-center gap-2">
+          <span id="detailNoticeBadge" class="text-xs font-black px-2.5 py-1 rounded-lg bg-amber-100 text-amber-800 border border-amber-200">
+            공지
+          </span>
+          <span id="detailNoticePin" class="hidden text-xs font-black px-2 py-0.5 rounded-lg bg-red-600 text-white flex items-center gap-1">
+            <i class="fa-solid fa-thumbtack text-[10px]"></i> 상단 고정
+          </span>
+        </div>
+        <button onclick="closeNoticeDetailModal()" class="text-slate-400 hover:text-slate-700 text-2xl p-1.5 transition">
+          <i class="fa-solid fa-xmark"></i>
+        </button>
+      </div>
+
+      <div class="mb-4 shrink-0">
+        <h3 id="detailNoticeTitle" class="text-xl xl:text-2xl font-black text-slate-900 leading-snug">
+          공지 제목
+        </h3>
+      </div>
+
+      <div class="flex-1 overflow-y-auto pr-2 bg-slate-50/80 p-4 rounded-2xl border border-slate-200/80 mb-6">
+        <p id="detailNoticeContent" class="text-base xl:text-lg text-slate-800 whitespace-pre-line leading-relaxed font-medium">
+          공지 상세 내용이 여기에 표시됩니다.
+        </p>
+      </div>
+
+      <div class="flex items-center justify-between gap-3 shrink-0 pt-2 border-t border-slate-100">
+        <button id="btnEditFromDetail" onclick="editFromDetailModal()" class="touch-btn py-2.5 px-4 bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold rounded-xl text-sm transition flex items-center gap-1.5">
+          <i class="fa-solid fa-pen text-xs"></i> 내용 수정
+        </button>
+        <button onclick="closeNoticeDetailModal()" class="touch-btn py-2.5 px-6 bg-indigo-600 hover:bg-indigo-700 text-white font-bold rounded-xl text-sm shadow-md transition">
+          확인 완료
+        </button>
+      </div>
+    </div>
+  </div>
+
+
   <!-- ==================== 모달 3: 학사 일정 & 수행평가/D-Day 추가/수정 (고정 핀 지원) ==================== -->
   <div id="scheduleModal" class="fixed inset-0 bg-slate-900/60 backdrop-blur-sm hidden items-center justify-center z-50 p-4">
     <div class="bg-white rounded-2xl shadow-2xl border border-slate-200 max-w-md w-full p-6 transition-all">
@@ -682,14 +723,32 @@
 
         <div class="pt-2 border-t border-slate-100">
           <div class="flex items-center justify-between mb-1">
-            <label class="block text-xs font-bold text-slate-700">나이스(NEIS) 오픈 API 설정</label>
-            <span class="text-[11px] text-rose-600">미입력 시 샘플 급식 표시</span>
+            <label class="block text-xs font-bold text-slate-700">나이스(NEIS) 오픈 API 실시간 급식 연동</label>
+            <span class="text-[11px] text-rose-600 font-bold">학교 검색 지원</span>
           </div>
+          <!-- 빠른 학교 검색 -->
+          <div class="flex items-center gap-1.5 mb-2">
+            <input type="text" id="settingSchoolSearchInput" class="flex-1 px-2.5 py-1.5 border rounded-lg text-xs" placeholder="우리 학교 이름 입력 (예: 서울고등학교, 역삼중)">
+            <button type="button" onclick="searchNeisSchoolModal()" class="px-3 py-1.5 bg-rose-500 hover:bg-rose-600 text-white rounded-lg text-xs font-bold shrink-0 transition">
+              <i class="fa-solid fa-magnifying-glass mr-1"></i>학교 검색
+            </button>
+          </div>
+          <div id="schoolSearchResultBox" class="hidden mb-2 max-h-32 overflow-y-auto p-1.5 bg-slate-50 border rounded-lg space-y-1 text-xs">
+            <!-- 검색 결과 렌더링 -->
+          </div>
+
           <div class="grid grid-cols-2 gap-2 mb-2">
-            <input type="text" id="settingNeisEduOffice" class="w-full px-2.5 py-1.5 border rounded-lg text-xs" placeholder="시도교육청코드 (예: B10)">
-            <input type="text" id="settingNeisSchoolCode" class="w-full px-2.5 py-1.5 border rounded-lg text-xs" placeholder="표준학교코드 (7자리)">
+            <div>
+              <span class="text-[10px] text-slate-500 block mb-0.5">시도교육청코드</span>
+              <input type="text" id="settingNeisEduOffice" class="w-full px-2.5 py-1.5 border rounded-lg text-xs font-mono" placeholder="예: B10 (서울)">
+            </div>
+            <div>
+              <span class="text-[10px] text-slate-500 block mb-0.5">표준학교코드 (7자리)</span>
+              <input type="text" id="settingNeisSchoolCode" class="w-full px-2.5 py-1.5 border rounded-lg text-xs font-mono" placeholder="예: 7010057">
+            </div>
           </div>
           <input type="text" id="settingNeisApiKey" class="w-full px-2.5 py-1.5 border rounded-lg text-xs" placeholder="NEIS API Key (인증키 없을 경우 공백)">
+          <p class="text-[10px] text-slate-400 mt-1">※ 학교 이름을 검색하면 교육청코드와 학교코드가 자동으로 채워집니다!</p>
         </div>
       </div>
 
@@ -1192,7 +1251,13 @@
         };
         const colorClass = badgeColors[n.type] || 'bg-slate-100 text-slate-700 border-slate-200';
 
-        card.className = `p-3.5 rounded-xl border transition relative ${n.isPinned ? 'pinned-item shadow-xs border-red-200' : 'bg-slate-50 border-slate-200/80'}`;
+        card.className = `p-3.5 rounded-xl border transition relative cursor-pointer hover:shadow-md ${n.isPinned ? 'pinned-item shadow-xs border-red-200' : 'bg-slate-50 border-slate-200/80 hover:bg-amber-50/40'}`;
+        card.onclick = (e) => {
+          if (!e.target.closest('button')) {
+            openNoticeDetailModal(n.id);
+          }
+        };
+
         card.innerHTML = `
           <div class="flex items-center justify-between gap-2 mb-1.5">
             <div class="flex items-center gap-1.5 flex-wrap">
@@ -1211,10 +1276,53 @@
               </button>
             </div>
           </div>
-          <p class="text-sm text-slate-600 whitespace-pre-line pl-0.5 leading-relaxed">${n.content}</p>
+          <p class="text-sm text-slate-600 line-clamp-2 pl-0.5 leading-relaxed">${n.content}</p>
+          <div class="mt-1 flex items-center justify-end text-[11px] text-amber-700 font-bold opacity-80 hover:opacity-100">
+            <span>자세히 보기 <i class="fa-solid fa-chevron-right text-[9px] ml-0.5"></i></span>
+          </div>
         `;
         container.appendChild(card);
       });
+    }
+
+    let activeDetailNoticeId = null;
+
+    function openNoticeDetailModal(id) {
+      const target = noticeData.find(item => item.id === id);
+      if (!target) return;
+
+      activeDetailNoticeId = id;
+      document.getElementById('detailNoticeTitle').innerText = target.title;
+      document.getElementById('detailNoticeContent').innerText = target.content;
+      document.getElementById('detailNoticeBadge').innerText = target.badge || '공지';
+
+      const pinEl = document.getElementById('detailNoticePin');
+      if (target.isPinned) {
+        pinEl.classList.remove('hidden');
+        pinEl.classList.add('flex');
+      } else {
+        pinEl.classList.add('hidden');
+        pinEl.classList.remove('flex');
+      }
+
+      const modal = document.getElementById('noticeDetailModal');
+      modal.classList.remove('hidden');
+      modal.classList.add('flex');
+    }
+
+    function closeNoticeDetailModal() {
+      const modal = document.getElementById('noticeDetailModal');
+      modal.classList.add('hidden');
+      modal.classList.remove('flex');
+      activeDetailNoticeId = null;
+    }
+
+    function editFromDetailModal() {
+      if (activeDetailNoticeId !== null) {
+        const idToEdit = activeDetailNoticeId;
+        closeNoticeDetailModal();
+        editNoticeModal(idToEdit);
+      }
     }
 
     function toggleNoticePin(id) {
@@ -1849,6 +1957,55 @@
       const modal = document.getElementById('settingsModal');
       modal.classList.remove('hidden');
       modal.classList.add('flex');
+    }
+
+    async function searchNeisSchoolModal() {
+      const query = document.getElementById('settingSchoolSearchInput').value.trim();
+      const resultBox = document.getElementById('schoolSearchResultBox');
+      if (!query) {
+        alert('검색할 학교 이름을 입력해주세요 (예: 서울고, 역삼중)');
+        return;
+      }
+
+      resultBox.classList.remove('hidden');
+      resultBox.innerHTML = '<div class="p-2 text-slate-500 text-center"><i class="fa-solid fa-spinner fa-spin mr-1"></i>학교 정보를 검색 중입니다...</div>';
+
+      try {
+        let url = `https://open.neis.go.kr/hub/schoolInfo?Type=json&pIndex=1&pSize=15&SCHUL_NM=${encodeURIComponent(query)}`;
+        const apiKey = document.getElementById('settingNeisApiKey').value.trim();
+        if (apiKey) url += `&KEY=${apiKey}`;
+
+        const res = await fetch(url);
+        const data = await res.json();
+
+        if (data.schoolInfo && data.schoolInfo[1].row) {
+          const list = data.schoolInfo[1].row;
+          resultBox.innerHTML = '';
+          list.forEach(item => {
+            const rowDiv = document.createElement('div');
+            rowDiv.className = 'p-1.5 hover:bg-rose-50 cursor-pointer rounded border border-slate-100 flex items-center justify-between transition';
+            rowDiv.onclick = () => {
+              document.getElementById('settingNeisEduOffice').value = item.ATPT_OFCDC_SC_CODE;
+              document.getElementById('settingNeisSchoolCode').value = item.SD_SCHUL_CODE;
+              resultBox.classList.add('hidden');
+              alert(`[${item.SCHUL_NM}] 선택 완료!\n교육청코드(${item.ATPT_OFCDC_SC_CODE}) 및 학교코드(${item.SD_SCHUL_CODE})가 자동 입력되었습니다.`);
+            };
+            rowDiv.innerHTML = `
+              <div>
+                <span class="font-bold text-slate-800">${item.SCHUL_NM}</span>
+                <span class="text-[10px] text-slate-400 block">${item.ORG_RDNMA || item.JU_ORG_NM || ''}</span>
+              </div>
+              <span class="text-[10px] px-1.5 py-0.5 bg-slate-200 text-slate-700 rounded font-mono font-bold">선택</span>
+            `;
+            resultBox.appendChild(rowDiv);
+          });
+        } else {
+          resultBox.innerHTML = '<div class="p-2 text-rose-500 text-center">검색 결과가 없습니다. 학교명을 다시 확인해주세요.</div>';
+        }
+      } catch (err) {
+        console.warn('학교 검색 실패:', err);
+        resultBox.innerHTML = '<div class="p-2 text-rose-500 text-center">학교 검색 중 오류가 발생했습니다. 잠시 후 다시 시도해주세요.</div>';
+      }
     }
 
     function closeSettingsModal() {
