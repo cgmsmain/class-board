@@ -1,0 +1,1892 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>학급 스마트 아침 조회 대시보드</title>
+  
+  <!-- Tailwind CSS CDN -->
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script>
+    tailwind.config = {
+      theme: {
+        extend: {
+          colors: {
+            brand: {
+              50: '#f0f7ff',
+              100: '#e0effe',
+              500: '#2563eb',
+              600: '#1d4ed8',
+              700: '#1e40af',
+            }
+          },
+          fontFamily: {
+            sans: ['Pretendard', '-apple-system', 'BlinkMacSystemFont', 'Segoe UI', 'Roboto', 'sans-serif'],
+          }
+        }
+      }
+    }
+  </script>
+  
+  <!-- FontAwesome Icons CDN -->
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+  
+  <!-- SheetJS CDN (엑셀 xlsx 및 csv 파싱용) -->
+  <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
+
+  <style>
+    @import url('https://cdn.jsdelivr.net/gh/orioncactus/pretendard/dist/web/static/pretendard.css');
+    
+    body {
+      font-family: 'Pretendard', sans-serif;
+      user-select: none;
+      -webkit-user-select: none;
+      overflow-x: hidden;
+    }
+    
+    .dashboard-card {
+      transition: transform 0.2s ease, box-shadow 0.2s ease;
+    }
+    .dashboard-card:hover {
+      transform: translateY(-2px);
+    }
+    .touch-btn:active {
+      transform: scale(0.96);
+    }
+    
+    /* 부드러운 스크롤바 */
+    ::-webkit-scrollbar {
+      width: 6px;
+      height: 6px;
+    }
+    ::-webkit-scrollbar-track {
+      background: #f1f5f9;
+      border-radius: 4px;
+    }
+    ::-webkit-scrollbar-thumb {
+      background: #cbd5e1;
+      border-radius: 4px;
+    }
+    ::-webkit-scrollbar-thumb:hover {
+      background: #94a3b8;
+    }
+
+    /* 상단 고정 핀 애니메이션 및 스타일 */
+    .pinned-item {
+      position: relative;
+      border-left: 4px solid #ef4444 !important;
+      background: linear-gradient(90deg, #fef2f2 0%, #ffffff 100%);
+    }
+
+    .pinned-schedule {
+      position: relative;
+      border-left: 4px solid #0d9488 !important;
+      background: linear-gradient(90deg, #f0fdfa 0%, #ffffff 100%);
+    }
+
+    @media (min-width: 1024px) {
+      body {
+        height: 100vh;
+        overflow: hidden;
+      }
+    }
+  </style>
+</head>
+<body class="bg-slate-100 text-slate-800 min-h-screen flex flex-col justify-between p-3.5 xl:p-4 select-none">
+
+  <!-- ==================== 상단 헤더 ==================== -->
+  <header class="bg-white rounded-2xl shadow-md border border-slate-200/90 px-5 py-3 flex items-center justify-between gap-4 mb-3">
+    <!-- 왼쪽: 학급 정보 & 엑셀 연동 상태 -->
+    <div class="flex items-center gap-3 shrink-0">
+      <div class="w-11 h-11 rounded-xl bg-blue-600 text-white flex items-center justify-center text-xl shadow-sm">
+        <i class="fa-solid fa-graduation-cap"></i>
+      </div>
+      <div>
+        <div class="flex items-center gap-2">
+          <h1 id="classTitle" class="text-xl xl:text-2xl font-extrabold tracking-tight text-slate-900">1학년 2반 아침조회</h1>
+          <span id="excelBadge" class="hidden text-[10px] font-bold px-2 py-0.5 rounded-md bg-emerald-100 text-emerald-800 border border-emerald-300">
+            <i class="fa-solid fa-file-excel mr-1"></i>전체시간표.xlsx 연동됨
+          </span>
+        </div>
+        <p id="subTitle" class="text-xs font-medium text-slate-500">오늘도 활기차고 행복한 하루 보내세요!</p>
+      </div>
+    </div>
+
+    <!-- [상단 헤더]: 오늘의 맛있는 급식 2줄 배치 (스크롤 없이 한눈에 보기) -->
+    <div class="flex-1 max-w-2xl hidden md:flex items-center gap-2 px-2 overflow-hidden">
+      <div class="flex flex-col items-center justify-center text-xs font-extrabold text-rose-800 shrink-0 bg-rose-50 px-2.5 py-1 rounded-xl border border-rose-200 leading-tight">
+        <div class="flex items-center gap-1">
+          <i class="fa-solid fa-utensils text-rose-600"></i>
+          <span>오늘의 급식</span>
+        </div>
+        <span id="mealCaloriesBadge" class="text-[10px] font-bold text-rose-700 mt-0.5">
+          785.4 Kcal
+        </span>
+      </div>
+      <!-- 급식 메뉴 2줄 가로 배치 (스크롤 없이 한눈에) -->
+      <div id="mealDishList" class="flex-1 grid grid-rows-2 grid-flow-col auto-cols-max gap-1 items-center overflow-hidden py-0.5">
+        <!-- JS 렌더링 -->
+      </div>
+      <span id="mealSourceText" class="text-[10px] text-slate-400 shrink-0 hidden xl:inline">나이스 연동</span>
+    </div>
+
+    <!-- 오른쪽: 실시간 시계 & 관리자 도구 버튼 -->
+    <div class="flex items-center gap-3 shrink-0">
+      <!-- 실시간 시계 -->
+      <div class="text-right">
+        <div id="currentDate" class="text-xs xl:text-sm font-bold text-slate-500">2026년 9월 19일 (토)</div>
+        <div id="currentTime" class="text-2xl xl:text-3xl font-extrabold text-blue-600 font-mono tracking-tight leading-none mt-0.5">11:00:00</div>
+      </div>
+
+      <!-- 교사용 원격 관리 모드 버튼 & 설정 -->
+      <div class="flex items-center gap-2 border-l border-slate-200 pl-3">
+        <!-- 선생님 모드 원격 수정 버튼 -->
+        <button onclick="openTeacherAdminModal()" class="touch-btn px-3 py-2 rounded-xl bg-indigo-600 hover:bg-indigo-700 text-white font-bold text-xs xl:text-sm flex items-center gap-1.5 shadow-sm transition" title="인터넷 접속 교사 수정">
+          <i class="fa-solid fa-chalkboard-user"></i>
+          <span>선생님 모드</span>
+        </button>
+        <!-- 환경 설정 버튼 -->
+        <button onclick="openSettingsModal()" class="touch-btn w-10 h-10 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-700 flex items-center justify-center text-base transition" title="환경 설정">
+          <i class="fa-solid fa-gear"></i>
+        </button>
+        <!-- 전체화면 토글 -->
+        <button onclick="toggleFullScreen()" class="touch-btn w-10 h-10 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-700 flex items-center justify-center text-base transition" title="전체화면 (F11)">
+          <i id="fullscreenIcon" class="fa-solid fa-expand"></i>
+        </button>
+      </div>
+    </div>
+  </header>
+
+  <!-- ==================== 메인 그리드 레이아웃 (3열 균형 구조, 1920x1080 최적화) ==================== -->
+  <main class="grid grid-cols-1 lg:grid-cols-12 gap-3.5 flex-1 min-h-0">
+    
+    <!-- [좌측 열: lg:col-span-4] 오늘의 시간표 (상단) + 청소 구역 & 당번 (하단) -->
+    <div class="lg:col-span-4 flex flex-col gap-3.5 h-full min-h-0">
+      <!-- 1. 오늘의 수업 시간표 (1교시 옆에 5교시, 2교시 옆에 6교시, 3교시 옆에 7교시 스크롤 없이 한눈에) -->
+      <section class="bg-white rounded-2xl shadow-md border border-slate-200/90 p-3 xl:p-3.5 flex flex-col flex-1 dashboard-card min-h-0">
+        <div class="flex items-center justify-between mb-1.5 shrink-0">
+          <div class="flex items-center gap-2">
+            <span class="w-7 h-7 rounded-lg bg-indigo-100 text-indigo-700 flex items-center justify-center text-sm shrink-0">
+              <i class="fa-solid fa-calendar-days"></i>
+            </span>
+            <div>
+              <h2 class="text-base xl:text-lg font-bold text-slate-900 leading-tight">오늘의 시간표</h2>
+              <span id="timetableDayLabel" class="text-[11px] text-indigo-600 font-bold">월요일 시간표</span>
+            </div>
+          </div>
+          <div class="flex items-center gap-1.5">
+            <button onclick="reloadTimetableFromSource()" class="touch-btn text-[11px] font-semibold px-2 py-0.5 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-lg flex items-center gap-1" title="엑셀 다시 불러오기">
+              <i class="fa-solid fa-rotate text-[10px]"></i> 동기화
+            </button>
+            <span class="text-[10px] font-semibold px-1.5 py-0.5 bg-indigo-50 text-indigo-700 rounded-lg">터치 편집</span>
+          </div>
+        </div>
+
+        <!-- 시간표 2단 대칭 레이아웃 (1교시 옆 5교시, 2교시 옆 6교시, 3교시 옆 7교시 나란히 완벽 정렬) -->
+        <div id="timetableGrid" class="flex-1 grid grid-cols-2 grid-rows-4 gap-1.5 overflow-hidden min-h-0">
+          <!-- JS 렌더링 -->
+        </div>
+      </section>
+
+      <!-- 2. 청소 구역 & 당번 (구역 칸 크기 조절로 스크롤 없이 한눈에 보기) -->
+      <section class="bg-white rounded-2xl shadow-md border border-slate-200/90 p-3 xl:p-3.5 flex flex-col flex-1 dashboard-card min-h-0">
+        <div class="flex items-center justify-between mb-1.5 shrink-0">
+          <div class="flex items-center gap-2">
+            <span class="w-7 h-7 rounded-lg bg-emerald-100 text-emerald-700 flex items-center justify-center text-sm shrink-0">
+              <i class="fa-solid fa-broom"></i>
+            </span>
+            <div>
+              <h2 class="text-base xl:text-lg font-bold text-slate-900 leading-tight">청소 구역 & 당번</h2>
+              <span class="text-[11px] text-emerald-600 font-bold">좌우 4칸씩 총 8구역</span>
+            </div>
+          </div>
+          <div class="flex items-center gap-1.5">
+            <button onclick="openCleaningModal()" class="touch-btn text-[11px] font-bold px-2 py-0.5 bg-emerald-600 hover:bg-emerald-700 text-white rounded-lg flex items-center gap-1 shadow-2xs">
+              <i class="fa-solid fa-pen text-[10px]"></i> 편집
+            </button>
+            <span class="text-[10px] font-semibold px-1.5 py-0.5 bg-emerald-50 text-emerald-700 rounded-md">종례 후 10분</span>
+          </div>
+        </div>
+
+        <!-- 청소 구역 그리드 (스크롤 없이 h-full에 맞게 2열 x 4행 완벽 배치) -->
+        <div id="cleaningDutyGrid" class="flex-1 grid grid-cols-2 grid-rows-4 gap-1.5 overflow-hidden min-h-0">
+          <!-- JS 렌더링 -->
+        </div>
+      </section>
+    </div>
+
+    <!-- [중앙 열: lg:col-span-4] 담임 선생님 알림장 (상단) + 오늘의 핵심 일정 및 수행평가 (하단) -->
+    <div class="lg:col-span-4 flex flex-col gap-3.5 h-full min-h-0">
+      <!-- 1. 담임 선생님 알림장 (상단 고정 핀 + 스크롤 지원) -->
+      <section class="bg-white rounded-2xl shadow-md border border-slate-200/90 p-3.5 xl:p-4 flex flex-col flex-1 dashboard-card min-h-0">
+        <div class="flex items-center justify-between mb-2">
+          <div class="flex items-center gap-2">
+            <span class="w-8 h-8 rounded-lg bg-amber-100 text-amber-700 flex items-center justify-center text-base shrink-0">
+              <i class="fa-solid fa-bullhorn"></i>
+            </span>
+            <div>
+              <h2 class="text-lg xl:text-xl font-bold text-slate-900">담임 선생님 알림장</h2>
+              <span class="text-[11px] text-amber-600 font-bold">📌 중요 공지 최상단 고정</span>
+            </div>
+          </div>
+          <div class="flex items-center gap-1.5">
+            <button onclick="openNoticeModal()" class="touch-btn text-xs font-bold px-2.5 py-1 bg-amber-500 hover:bg-amber-600 text-white rounded-lg flex items-center gap-1 shadow-2xs">
+              <i class="fa-solid fa-plus"></i> 공지 추가
+            </button>
+            <span id="noticeSyncBadge" class="text-[11px] font-medium px-2 py-0.5 bg-emerald-50 text-emerald-700 rounded-full flex items-center gap-1">
+              <span class="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse"></span>
+              실시간
+            </span>
+          </div>
+        </div>
+
+        <!-- 알림장 스크롤 목록 -->
+        <div id="noticeContainer" class="flex-1 overflow-y-auto space-y-2 pr-1 text-slate-700 text-xs xl:text-sm min-h-0">
+          <!-- JS 렌더링 -->
+        </div>
+      </section>
+
+      <!-- 2. 오늘의 핵심 일정 & 수행평가 (급식 자리로 이동) -->
+      <section class="bg-white rounded-2xl shadow-md border border-slate-200/90 p-3.5 xl:p-4 flex flex-col flex-1 dashboard-card min-h-0">
+        <div class="flex items-center justify-between mb-2">
+          <div class="flex items-center gap-2">
+            <span class="w-8 h-8 rounded-lg bg-teal-100 text-teal-700 flex items-center justify-center text-base shrink-0">
+              <i class="fa-solid fa-calendar-star"></i>
+            </span>
+            <div>
+              <h2 class="text-lg xl:text-xl font-bold text-slate-900">오늘의 핵심 일정 & 수행평가</h2>
+              <span class="text-[11px] text-teal-600 font-bold">오늘 마감 및 임박 D-Day</span>
+            </div>
+          </div>
+          <button onclick="openScheduleModal()" class="touch-btn text-xs font-bold px-2.5 py-1 bg-teal-600 hover:bg-teal-700 text-white rounded-lg flex items-center gap-1 shadow-2xs">
+            <i class="fa-solid fa-plus"></i> 일정 추가
+          </button>
+        </div>
+
+        <!-- 오늘 핵심 일정 컨테이너 -->
+        <div class="flex-1 flex flex-col justify-between bg-teal-50/40 rounded-xl p-2.5 border border-teal-100 min-h-0">
+          <div id="headerTodaySchedules" class="flex-1 overflow-y-auto space-y-2 pr-1 min-h-0">
+            <!-- JS 렌더링 -->
+          </div>
+          <div class="mt-2 pt-1.5 border-t border-teal-200/60 text-[11px] text-teal-700 flex items-center justify-between">
+            <span><i class="fa-solid fa-circle-check mr-1"></i>항목을 터치하여 바로 수정할 수 있습니다.</span>
+            <span class="text-[10px] text-slate-400">우측 타임라인과 연동</span>
+          </div>
+        </div>
+      </section>
+    </div>
+
+    <!-- [우측 열: lg:col-span-4] 주요 학사 일정 & 수행평가 D-Day 통합 (전체 높이 활용) -->
+    <div class="lg:col-span-4 flex flex-col h-full min-h-0">
+      <section class="bg-white rounded-2xl shadow-md border border-slate-200/90 p-3.5 xl:p-4 flex flex-col flex-1 dashboard-card min-h-0">
+        <div class="flex items-center justify-between mb-2">
+          <div class="flex items-center gap-2">
+            <span class="w-8 h-8 rounded-lg bg-teal-100 text-teal-700 flex items-center justify-center text-base shrink-0">
+              <i class="fa-solid fa-calendar-check"></i>
+            </span>
+            <div>
+              <h2 class="text-lg xl:text-xl font-bold text-slate-900">주요 학사 일정 & 수행평가</h2>
+              <span class="text-[11px] text-teal-600 font-bold">D-DAY 타임라인</span>
+            </div>
+          </div>
+          <div class="flex items-center gap-1.5">
+            <button onclick="openScheduleModal()" class="touch-btn text-xs font-bold px-2.5 py-1 bg-teal-600 hover:bg-teal-700 text-white rounded-lg flex items-center gap-1 shadow-2xs">
+              <i class="fa-solid fa-plus"></i> 일정 등록
+            </button>
+          </div>
+        </div>
+
+        <!-- 탭 필터 -->
+        <div class="flex items-center gap-1.5 mb-2.5 border-b border-slate-100 pb-1.5">
+          <button onclick="filterScheduleCategory('all')" id="filterBtnAll" class="px-2.5 py-1 rounded-lg text-xs font-bold bg-teal-600 text-white transition">전체</button>
+          <button onclick="filterScheduleCategory('exam')" id="filterBtnExam" class="px-2.5 py-1 rounded-lg text-xs font-bold bg-slate-100 text-slate-600 hover:bg-slate-200 transition">수행·시험</button>
+          <button onclick="filterScheduleCategory('school')" id="filterBtnSchool" class="px-2.5 py-1 rounded-lg text-xs font-bold bg-slate-100 text-slate-600 hover:bg-slate-200 transition">학사일정</button>
+        </div>
+
+        <!-- 통합 일정 스크롤 리스트 (📌 고정 상단 + 스크롤) -->
+        <div id="unifiedScheduleContainer" class="flex-1 overflow-y-auto space-y-2 pr-1 min-h-0">
+          <!-- JS 렌더링 -->
+        </div>
+      </section>
+    </div>
+
+  </main>
+
+  <!-- ==================== 하단 푸터 배너 ==================== -->
+  <footer class="mt-3 bg-slate-900 text-white rounded-xl px-4 py-2 flex items-center justify-between text-xs font-medium shadow-sm">
+    <div class="flex items-center gap-2">
+      <span class="w-2 h-2 rounded-full bg-emerald-400"></span>
+      <span>스마트 보드 모드 가동 중 · 1분 주기 백그라운드 자동 동기화</span>
+    </div>
+    <div class="flex items-center gap-4 text-slate-300">
+      <span>단축키: <kbd class="px-1.5 py-0.5 bg-slate-800 border border-slate-700 rounded text-slate-200">F11</kbd> 전체화면</span>
+      <span id="lastUpdatedTime">동기화: 방금 전</span>
+    </div>
+  </footer>
+
+
+  <!-- ==================== 모달 1: 시간표 터치 수정 팝업 ==================== -->
+  <div id="timetableModal" class="fixed inset-0 bg-slate-900/60 backdrop-blur-sm hidden items-center justify-center z-50 p-4">
+    <div class="bg-white rounded-2xl shadow-2xl border border-slate-200 max-w-md w-full p-6 transition-all">
+      <div class="flex items-center justify-between border-b border-slate-100 pb-3 mb-4">
+        <h3 class="text-xl font-bold text-slate-900 flex items-center gap-2">
+          <i class="fa-solid fa-pen-to-square text-blue-600"></i>
+          <span id="modalPeriodTitle">1교시 수업 변경</span>
+        </h3>
+        <button onclick="closeTimetableModal()" class="text-slate-400 hover:text-slate-600 text-2xl p-1">
+          <i class="fa-solid fa-xmark"></i>
+        </button>
+      </div>
+
+      <div class="space-y-4 mb-6">
+        <div>
+          <label class="block text-sm font-semibold text-slate-700 mb-1.5">과목명</label>
+          <input type="text" id="modalSubjectInput" class="w-full px-4 py-3 text-lg rounded-xl border border-slate-200 focus:border-blue-500 focus:ring-2 focus:ring-blue-100 outline-none font-bold text-slate-800" placeholder="예: 국어, 수학, 자율활동">
+        </div>
+        
+        <div>
+          <label class="block text-sm font-semibold text-slate-700 mb-1.5">수업실 / 메모 / 준비물</label>
+          <input type="text" id="modalRoomInput" class="w-full px-4 py-3 text-base rounded-xl border border-slate-200 focus:border-blue-500 focus:ring-2 focus:ring-blue-100 outline-none font-medium text-slate-800" placeholder="예: 과학실 / 김선생님 / 실험복 필수">
+        </div>
+
+        <div>
+          <label class="block text-xs font-semibold text-slate-500 mb-2">빠른 과목 선택 터치</label>
+          <div class="flex flex-wrap gap-2" id="quickSubjectPills">
+            <!-- JS 칩 생성 -->
+          </div>
+        </div>
+      </div>
+
+      <div class="flex items-center gap-3">
+        <button onclick="closeTimetableModal()" class="touch-btn flex-1 py-3 px-4 bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold rounded-xl text-base transition">
+          취소
+        </button>
+        <button onclick="saveTimetableModal()" class="touch-btn flex-1 py-3 px-4 bg-blue-600 hover:bg-blue-700 text-white font-bold rounded-xl text-base shadow-sm transition">
+          저장 완료
+        </button>
+      </div>
+    </div>
+  </div>
+
+
+  <!-- ==================== 모달 2: 담임 알림장 추가/수정 (고정 핀 지원) ==================== -->
+  <div id="noticeModal" class="fixed inset-0 bg-slate-900/60 backdrop-blur-sm hidden items-center justify-center z-50 p-4">
+    <div class="bg-white rounded-2xl shadow-2xl border border-slate-200 max-w-md w-full p-6 transition-all">
+      <div class="flex items-center justify-between border-b border-slate-100 pb-3 mb-4">
+        <h3 class="text-xl font-bold text-slate-900 flex items-center gap-2">
+          <i class="fa-solid fa-bullhorn text-amber-500"></i>
+          알림장 등록 / 수정
+        </h3>
+        <button onclick="closeNoticeModal()" class="text-slate-400 hover:text-slate-600 text-2xl p-1">
+          <i class="fa-solid fa-xmark"></i>
+        </button>
+      </div>
+
+      <input type="hidden" id="noticeEditIndex" value="-1">
+
+      <div class="space-y-4 mb-6">
+        <div>
+          <label class="block text-xs font-bold text-slate-600 mb-1">구분 태그</label>
+          <div class="grid grid-cols-3 gap-2">
+            <label class="cursor-pointer border rounded-xl p-2 text-center text-xs font-bold has-[:checked]:bg-rose-50 has-[:checked]:border-rose-500 has-[:checked]:text-rose-700">
+              <input type="radio" name="noticeType" value="urgent" class="hidden" checked> 중요
+            </label>
+            <label class="cursor-pointer border rounded-xl p-2 text-center text-xs font-bold has-[:checked]:bg-blue-50 has-[:checked]:border-blue-500 has-[:checked]:text-blue-700">
+              <input type="radio" name="noticeType" value="info" class="hidden"> 안내
+            </label>
+            <label class="cursor-pointer border rounded-xl p-2 text-center text-xs font-bold has-[:checked]:bg-emerald-50 has-[:checked]:border-emerald-500 has-[:checked]:text-emerald-700">
+              <input type="radio" name="noticeType" value="event" class="hidden"> 행사
+            </label>
+          </div>
+        </div>
+
+        <div>
+          <label class="block text-xs font-bold text-slate-600 mb-1">제목</label>
+          <input type="text" id="noticeTitleInput" class="w-full px-3 py-2 border rounded-xl text-sm font-bold" placeholder="공지 제목 입력">
+        </div>
+
+        <div>
+          <label class="block text-xs font-bold text-slate-600 mb-1">내용</label>
+          <textarea id="noticeContentInput" rows="3" class="w-full px-3 py-2 border rounded-xl text-sm" placeholder="상세 내용 입력 (줄바꿈 지원)"></textarea>
+        </div>
+
+        <!-- 최상단 고정 핀 체크박스 -->
+        <div class="p-3 bg-red-50 border border-red-200 rounded-xl flex items-center justify-between cursor-pointer" onclick="document.getElementById('noticePinCheck').click()">
+          <div class="flex items-center gap-2">
+            <i class="fa-solid fa-thumbtack text-red-500"></i>
+            <div>
+              <div class="text-xs font-bold text-red-800">최상단 고정 (📌 Pin)</div>
+              <div class="text-[11px] text-red-600">이 공지를 알림장 맨 위에 항상 고정합니다.</div>
+            </div>
+          </div>
+          <input type="checkbox" id="noticePinCheck" onclick="event.stopPropagation()" class="w-5 h-5 accent-red-600 rounded">
+        </div>
+      </div>
+
+      <div class="flex items-center gap-3">
+        <button id="btnDeleteNotice" onclick="deleteCurrentNotice()" class="hidden touch-btn py-2.5 px-4 bg-rose-50 hover:bg-rose-100 text-rose-700 font-bold rounded-xl text-sm transition">
+          삭제
+        </button>
+        <button onclick="closeNoticeModal()" class="touch-btn flex-1 py-2.5 px-4 bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold rounded-xl text-sm transition">
+          취소
+        </button>
+        <button onclick="saveNoticeModal()" class="touch-btn flex-1 py-2.5 px-4 bg-amber-500 hover:bg-amber-600 text-white font-bold rounded-xl text-sm shadow-sm transition">
+          저장
+        </button>
+      </div>
+    </div>
+  </div>
+
+
+  <!-- ==================== 모달 3: 학사 일정 & 수행평가/D-Day 추가/수정 (고정 핀 지원) ==================== -->
+  <div id="scheduleModal" class="fixed inset-0 bg-slate-900/60 backdrop-blur-sm hidden items-center justify-center z-50 p-4">
+    <div class="bg-white rounded-2xl shadow-2xl border border-slate-200 max-w-md w-full p-6 transition-all">
+      <div class="flex items-center justify-between border-b border-slate-100 pb-3 mb-4">
+        <h3 class="text-xl font-bold text-slate-900 flex items-center gap-2">
+          <i class="fa-solid fa-calendar-plus text-teal-600"></i>
+          일정 / 수행평가 등록 및 수정
+        </h3>
+        <button onclick="closeScheduleModal()" class="text-slate-400 hover:text-slate-600 text-2xl p-1">
+          <i class="fa-solid fa-xmark"></i>
+        </button>
+      </div>
+
+      <input type="hidden" id="scheduleEditId" value="-1">
+
+      <div class="space-y-4 mb-6">
+        <div>
+          <label class="block text-xs font-bold text-slate-600 mb-1">분류</label>
+          <div class="grid grid-cols-2 gap-2">
+            <label class="cursor-pointer border rounded-xl p-2 text-center text-xs font-bold has-[:checked]:bg-rose-50 has-[:checked]:border-rose-500 has-[:checked]:text-rose-700">
+              <input type="radio" name="scheduleCategory" value="exam" class="hidden" checked> 수행평가 / 시험
+            </label>
+            <label class="cursor-pointer border rounded-xl p-2 text-center text-xs font-bold has-[:checked]:bg-teal-50 has-[:checked]:border-teal-500 has-[:checked]:text-teal-700">
+              <input type="radio" name="scheduleCategory" value="school" class="hidden"> 학교 학사일정
+            </label>
+          </div>
+        </div>
+
+        <div>
+          <label class="block text-xs font-bold text-slate-600 mb-1">일정 / 평가명</label>
+          <input type="text" id="scheduleTitleInput" class="w-full px-3 py-2 border rounded-xl text-sm font-bold" placeholder="예: 과학 실험 수행평가, 2학기 중간고사">
+        </div>
+
+        <div class="grid grid-cols-2 gap-2">
+          <div>
+            <label class="block text-xs font-bold text-slate-600 mb-1">날짜 표시 문구</label>
+            <input type="text" id="scheduleDateInput" class="w-full px-3 py-2 border rounded-xl text-sm" placeholder="예: 오늘, 10월 12일(월)">
+          </div>
+          <div>
+            <label class="block text-xs font-bold text-slate-600 mb-1">D-Day 표시</label>
+            <input type="text" id="scheduleDdayInput" class="w-full px-3 py-2 border rounded-xl text-sm font-bold" placeholder="예: D-Day, D-3">
+          </div>
+        </div>
+
+        <div class="p-3 bg-teal-50 border border-teal-200 rounded-xl flex items-center justify-between cursor-pointer" onclick="document.getElementById('schedulePinCheck').click()">
+          <div class="flex items-center gap-2">
+            <i class="fa-solid fa-thumbtack text-teal-600"></i>
+            <div>
+              <div class="text-xs font-bold text-teal-800">최상단 고정 (📌 Pin)</div>
+              <div class="text-[11px] text-teal-600">목록 맨 위에 고정하여 강조합니다.</div>
+            </div>
+          </div>
+          <input type="checkbox" id="schedulePinCheck" onclick="event.stopPropagation()" class="w-5 h-5 accent-teal-600 rounded">
+        </div>
+      </div>
+
+      <div class="flex items-center gap-3">
+        <button id="btnDeleteSchedule" onclick="deleteCurrentSchedule()" class="hidden touch-btn py-2.5 px-4 bg-rose-50 hover:bg-rose-100 text-rose-700 font-bold rounded-xl text-sm transition">
+          삭제
+        </button>
+        <button onclick="closeScheduleModal()" class="touch-btn flex-1 py-2.5 px-4 bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold rounded-xl text-sm transition">
+          취소
+        </button>
+        <button onclick="saveScheduleModal()" class="touch-btn flex-1 py-2.5 px-4 bg-teal-600 hover:bg-teal-700 text-white font-bold rounded-xl text-sm shadow-sm transition">
+          저장
+        </button>
+      </div>
+    </div>
+  </div>
+
+
+  <!-- ==================== 모달 4: 청소 구역 & 당번 수정 팝업 (8개 구역 이상 지원) ==================== -->
+  <div id="cleaningModal" class="fixed inset-0 bg-slate-900/60 backdrop-blur-sm hidden items-center justify-center z-50 p-4">
+    <div class="bg-white rounded-2xl shadow-2xl border border-slate-200 max-w-xl w-full p-6 transition-all max-h-[90vh] flex flex-col">
+      <div class="flex items-center justify-between border-b border-slate-100 pb-3 mb-4">
+        <h3 class="text-xl font-bold text-slate-900 flex items-center gap-2">
+          <i class="fa-solid fa-broom text-emerald-600"></i>
+          청소 구역 및 당번 수정 (총 8개 이상 구역)
+        </h3>
+        <button onclick="closeCleaningModal()" class="text-slate-400 hover:text-slate-600 text-2xl p-1">
+          <i class="fa-solid fa-xmark"></i>
+        </button>
+      </div>
+
+      <div class="flex-1 overflow-y-auto space-y-2.5 pr-1" id="cleaningModalRows">
+        <!-- JS 생성 -->
+      </div>
+
+      <div class="pt-4 border-t border-slate-100 flex items-center justify-between gap-3 mt-4">
+        <button onclick="addCleaningAreaRow()" class="touch-btn py-2.5 px-4 bg-emerald-50 hover:bg-emerald-100 text-emerald-700 font-bold rounded-xl text-xs">
+          + 구역 추가
+        </button>
+        <div class="flex items-center gap-2">
+          <button onclick="closeCleaningModal()" class="touch-btn py-2.5 px-4 bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold rounded-xl text-sm transition">
+            취소
+          </button>
+          <button onclick="saveCleaningModal()" class="touch-btn py-2.5 px-5 bg-emerald-600 hover:bg-emerald-700 text-white font-bold rounded-xl text-sm shadow-sm transition">
+            저장 완료
+          </button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+
+  <!-- ==================== 모달 5: 교사용 원격 관리 모드 ==================== -->
+  <div id="teacherAdminModal" class="fixed inset-0 bg-slate-900/60 backdrop-blur-sm hidden items-center justify-center z-50 p-4">
+    <div class="bg-white rounded-2xl shadow-2xl border border-slate-200 max-w-2xl w-full p-6 transition-all max-h-[90vh] flex flex-col">
+      <div class="flex items-center justify-between border-b border-slate-100 pb-3 mb-4">
+        <div>
+          <h3 class="text-xl font-bold text-slate-900 flex items-center gap-2">
+            <i class="fa-solid fa-chalkboard-user text-indigo-600"></i>
+            교사 원격 관리 콘솔
+          </h3>
+          <p class="text-xs text-slate-500">교무실 PC나 스마트폰에서 실시간으로 알림장, 일정, 시간표, 청소당번을 원격 수정합니다.</p>
+        </div>
+        <button onclick="closeTeacherAdminModal()" class="text-slate-400 hover:text-slate-600 text-2xl p-1">
+          <i class="fa-solid fa-xmark"></i>
+        </button>
+      </div>
+
+      <!-- 탭 내비게이션 -->
+      <div class="flex border-b border-slate-200 mb-4 overflow-x-auto">
+        <button onclick="switchTeacherTab('notice')" id="tabNoticeBtn" class="py-2 px-3 font-bold text-xs xl:text-sm border-b-2 border-indigo-600 text-indigo-600 shrink-0">
+          알림장 관리
+        </button>
+        <button onclick="switchTeacherTab('schedule')" id="tabScheduleBtn" class="py-2 px-3 font-bold text-xs xl:text-sm text-slate-500 hover:text-slate-700 shrink-0">
+          일정 & 수행평가
+        </button>
+        <button onclick="switchTeacherTab('cleaning')" id="tabCleaningBtn" class="py-2 px-3 font-bold text-xs xl:text-sm text-slate-500 hover:text-slate-700 shrink-0">
+          청소 구역 & 당번
+        </button>
+        <button onclick="switchTeacherTab('timetable')" id="tabTimetableBtn" class="py-2 px-3 font-bold text-xs xl:text-sm text-slate-500 hover:text-slate-700 shrink-0">
+          시간표 일괄
+        </button>
+      </div>
+
+      <!-- 탭 1: 알림장 관리 -->
+      <div id="teacherTabNotice" class="flex-1 overflow-y-auto space-y-3 pr-1">
+        <div class="flex items-center justify-between bg-indigo-50 p-3 rounded-xl">
+          <span class="text-xs text-indigo-800 font-bold">등록된 공지사항 (터치하여 수정 / 핀 고정)</span>
+          <button onclick="openNoticeModal()" class="px-3 py-1 bg-indigo-600 hover:bg-indigo-700 text-white rounded-lg text-xs font-bold">
+            + 새 공지 추가
+          </button>
+        </div>
+        <div id="teacherNoticeList" class="space-y-2">
+          <!-- JS 렌더링 -->
+        </div>
+      </div>
+
+      <!-- 탭 2: 일정 & 수행평가 관리 -->
+      <div id="teacherTabSchedule" class="hidden flex-1 overflow-y-auto space-y-3 pr-1">
+        <div class="flex items-center justify-between bg-teal-50 p-3 rounded-xl">
+          <span class="text-xs text-teal-800 font-bold">주요 학사 일정 & 수행평가 목록</span>
+          <button onclick="openScheduleModal()" class="px-3 py-1 bg-teal-600 hover:bg-teal-700 text-white rounded-lg text-xs font-bold">
+            + 일정 추가
+          </button>
+        </div>
+        <div id="teacherScheduleList" class="space-y-2">
+          <!-- JS 렌더링 -->
+        </div>
+      </div>
+
+      <!-- 탭 3: 청소 구역 & 당번 관리 -->
+      <div id="teacherTabCleaning" class="hidden flex-1 overflow-y-auto space-y-3 pr-1">
+        <div class="flex items-center justify-between bg-emerald-50 p-3 rounded-xl">
+          <span class="text-xs text-emerald-800 font-bold">구역별 당번 학생 편집</span>
+          <button onclick="openCleaningModal()" class="px-3 py-1 bg-emerald-600 hover:bg-emerald-700 text-white rounded-lg text-xs font-bold">
+            편집창 열기
+          </button>
+        </div>
+        <div id="teacherCleaningPreview" class="space-y-2">
+          <!-- JS 렌더링 -->
+        </div>
+      </div>
+
+      <!-- 탭 4: 시간표 관리 -->
+      <div id="teacherTabTimetable" class="hidden flex-1 overflow-y-auto space-y-3 pr-1">
+        <div class="text-xs text-slate-500">교시별 과목 및 교실을 직접 수정할 수 있습니다:</div>
+        <div id="teacherTimetableRows" class="space-y-2">
+          <!-- JS 렌더링 -->
+        </div>
+      </div>
+
+      <div class="pt-4 border-t border-slate-100 flex items-center justify-end gap-3 mt-4">
+        <button onclick="closeTeacherAdminModal()" class="touch-btn py-2.5 px-5 bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold rounded-xl text-sm transition">
+          닫기
+        </button>
+      </div>
+    </div>
+  </div>
+
+
+  <!-- ==================== 모달 6: 설정 팝업 ==================== -->
+  <div id="settingsModal" class="fixed inset-0 bg-slate-900/60 backdrop-blur-sm hidden items-center justify-center z-50 p-4">
+    <div class="bg-white rounded-2xl shadow-2xl border border-slate-200 max-w-lg w-full p-6 transition-all max-h-[90vh] overflow-y-auto">
+      <div class="flex items-center justify-between border-b border-slate-100 pb-3 mb-4">
+        <h3 class="text-xl font-bold text-slate-900 flex items-center gap-2">
+          <i class="fa-solid fa-sliders text-blue-600"></i>
+          대시보드 환경 설정
+        </h3>
+        <button onclick="closeSettingsModal()" class="text-slate-400 hover:text-slate-600 text-2xl p-1">
+          <i class="fa-solid fa-xmark"></i>
+        </button>
+      </div>
+
+      <div class="space-y-4 mb-6">
+        <div class="grid grid-cols-2 gap-3">
+          <div>
+            <label class="block text-xs font-bold text-slate-600 mb-1">학년</label>
+            <input type="number" id="settingGrade" min="1" max="6" class="w-full px-3 py-2 border rounded-lg text-sm">
+          </div>
+          <div>
+            <label class="block text-xs font-bold text-slate-600 mb-1">반</label>
+            <input type="number" id="settingClass" min="1" max="20" class="w-full px-3 py-2 border rounded-lg text-sm">
+          </div>
+        </div>
+
+        <div>
+          <label class="block text-xs font-bold text-slate-600 mb-1">학급 슬로건 / 격려 문구</label>
+          <input type="text" id="settingSlogan" class="w-full px-3 py-2 border rounded-lg text-sm" placeholder="오늘도 활기차고 행복한 하루 보내세요!">
+        </div>
+
+        <!-- 깃허브 엑셀 파일 URL 설정 -->
+        <div class="pt-2 border-t border-slate-100">
+          <div class="flex items-center justify-between mb-1">
+            <label class="block text-xs font-bold text-slate-700">전체 학급 깃허브 엑셀 시간표 경로/URL</label>
+            <span class="text-[11px] text-emerald-600 font-bold">전체 학급 자동 반영</span>
+          </div>
+          <input type="text" id="settingExcelUrl" class="w-full px-3 py-2 border rounded-lg text-xs" placeholder="전체시간표/전체시간표.xlsx">
+          <p class="text-[11px] text-slate-400 mt-1">기본값: <code class="text-blue-600 font-bold">전체시간표/전체시간표.xlsx</code> (교내 컴시간/NEIS 양식 완벽 호환)</p>
+        </div>
+
+        <div class="pt-2 border-t border-slate-100">
+          <div class="flex items-center justify-between mb-1">
+            <label class="block text-xs font-bold text-slate-700">구글 스프레드시트 Web App API URL</label>
+            <span class="text-[11px] text-blue-600">선택 사항</span>
+          </div>
+          <input type="url" id="settingSheetUrl" class="w-full px-3 py-2 border rounded-lg text-xs" placeholder="https://script.google.com/macros/s/.../exec">
+          <p class="text-[11px] text-slate-400 mt-1">입력 시 알림장/일정 데이터를 구글 스프레드시트에서 실시간 fetch합니다.</p>
+        </div>
+
+        <div class="pt-2 border-t border-slate-100">
+          <div class="flex items-center justify-between mb-1">
+            <label class="block text-xs font-bold text-slate-700">나이스(NEIS) 오픈 API 설정</label>
+            <span class="text-[11px] text-rose-600">미입력 시 샘플 급식 표시</span>
+          </div>
+          <div class="grid grid-cols-2 gap-2 mb-2">
+            <input type="text" id="settingNeisEduOffice" class="w-full px-2.5 py-1.5 border rounded-lg text-xs" placeholder="시도교육청코드 (예: B10)">
+            <input type="text" id="settingNeisSchoolCode" class="w-full px-2.5 py-1.5 border rounded-lg text-xs" placeholder="표준학교코드 (7자리)">
+          </div>
+          <input type="text" id="settingNeisApiKey" class="w-full px-2.5 py-1.5 border rounded-lg text-xs" placeholder="NEIS API Key (인증키 없을 경우 공백)">
+        </div>
+      </div>
+
+      <div class="flex items-center gap-3">
+        <button onclick="resetToDefaults()" class="touch-btn py-2.5 px-4 bg-rose-50 hover:bg-rose-100 text-rose-700 font-semibold rounded-xl text-sm transition">
+          초기화
+        </button>
+        <button onclick="closeSettingsModal()" class="touch-btn py-2.5 px-4 bg-slate-100 hover:bg-slate-200 text-slate-700 font-semibold rounded-xl text-sm transition">
+          닫기
+        </button>
+        <button onclick="saveDashboardSettings()" class="touch-btn flex-1 py-2.5 px-4 bg-blue-600 hover:bg-blue-700 text-white font-semibold rounded-xl text-sm shadow-sm transition">
+          설정 저장 및 적용
+        </button>
+      </div>
+    </div>
+  </div>
+
+
+  <!-- ==================== 메인 자바스크립트 로직 ==================== -->
+  <script>
+    /* -------------------------------------------------------------
+     * 1. 전역 상태 및 URL 파라미터 분기
+     * ------------------------------------------------------------- */
+    const urlParams = new URLSearchParams(window.location.search);
+    const currentGrade = urlParams.get('grade') || localStorage.getItem('class_grade') || '1';
+    const currentClass = urlParams.get('class') || localStorage.getItem('class_room') || '2';
+    const isTeacherUrlParam = urlParams.get('mode') === 'teacher';
+    const storageKeyPrefix = `smartboard_g${currentGrade}_c${currentClass}_`;
+
+    let appConfig = {
+      grade: currentGrade,
+      classRoom: currentClass,
+      slogan: localStorage.getItem(`${storageKeyPrefix}slogan`) || '오늘도 활기차고 배움이 넘치는 하루 보내세요!',
+      excelUrl: localStorage.getItem(`smartboard_excel_url`) || '전체시간표/전체시간표.xlsx',
+      googleSheetUrl: localStorage.getItem(`${storageKeyPrefix}sheet_url`) || '',
+      neisOfficeCode: localStorage.getItem(`smartboard_neis_office`) || 'B10',
+      neisSchoolCode: localStorage.getItem(`smartboard_neis_school`) || '',
+      neisApiKey: localStorage.getItem(`smartboard_neis_key`) || ''
+    };
+
+    /* -------------------------------------------------------------
+     * 2. 기본 데이터셋
+     * ------------------------------------------------------------- */
+    const DEFAULT_TIMETABLE = [
+      { period: 1, time: '09:00 ~ 09:45', subject: '국어', room: '교실 (1권 42p)', tag: '준비물 지참' },
+      { period: 2, time: '09:55 ~ 10:40', subject: '수학', room: '교실', tag: '숙제 검사' },
+      { period: 3, time: '10:50 ~ 11:35', subject: '체육', room: '체육관', tag: '체육복 착용' },
+      { period: 4, time: '11:45 ~ 12:30', subject: '영어', room: '영어전용실', tag: '이동수업' },
+      { period: 5, time: '13:30 ~ 14:15', subject: '과학', room: '과학1실', tag: '실험 보고서' },
+      { period: 6, time: '14:25 ~ 15:10', subject: '사회', room: '교실', tag: '' },
+      { period: 7, time: '15:20 ~ 16:05', subject: '동아리', room: '각 지정실', tag: '자율동아리' }
+    ];
+
+    const DEFAULT_NOTICES = [
+      { id: 1, type: 'urgent', badge: '필독', title: '오늘 5교시 과학 수행평가 실시', content: '과학 1실로 13:25분까지 이동 완료할 것. 필기도구 및 실험 보고서 양식 지참 필수.', isPinned: true },
+      { id: 2, type: 'info', badge: '안내', title: '우유 급식 신청서 오늘까지 제출', content: '3분기 우유 급식 희망 여부 확인서 미제출자는 종례 전까지 반장에게 제출바랍니다.', isPinned: false },
+      { id: 3, type: 'event', badge: '행사', title: '내일 교내 사생대회 및 진로의 날 안내', content: '내일 3~4교시는 꿈 발표회 및 사생대회가 열리니 준비해오세요.', isPinned: false }
+    ];
+
+    const DEFAULT_MEAL = {
+      date: '오늘 점심 식단',
+      calories: '782.5 Kcal',
+      dishes: [
+        '친환경 흑미밥',
+        '얼큰 쇠고기뭇국',
+        '수제 치즈 돈가스 & 소스',
+        '양배추 코울슬로',
+        '배추김치',
+        '짜먹는 유기농 요거트'
+      ],
+      isSample: true
+    };
+
+    // 학사 일정 및 수행평가/시험 기본 데이터
+    const DEFAULT_SCHEDULES = [
+      { id: 1, category: 'exam', date: '오늘 (9/19)', title: '5교시 진로적성검사', dday: 'D-Day', isToday: true, isPinned: true },
+      { id: 2, category: 'exam', date: '9월 22일(화)', title: '영어듣기평가 2차', dday: 'D-3', isToday: false, isPinned: true },
+      { id: 3, category: 'school', date: '9월 25일(금)', title: '학급 체육 한마당 축제', dday: 'D-6', isToday: false, isPinned: false },
+      { id: 4, category: 'exam', date: '10월 12일(월)', title: '2학기 1차 중간고사', dday: 'D-23', isToday: false, isPinned: false },
+      { id: 5, category: 'school', date: '10월 23일(금)', title: '가을 현장체험학습', dday: 'D-34', isToday: false, isPinned: false },
+      { id: 6, category: 'school', date: '11월 05일(목)', title: '교내 독서 골든벨', dday: 'D-47', isToday: false, isPinned: false }
+    ];
+
+    // [요구사항 3]: 좌/우 4칸씩 총 8칸의 기본 청소 구역 데이터
+    const DEFAULT_CLEANING = [
+      { area: '칠판 및 교탁', students: ['김민준', '이서연'] },
+      { area: '앞쪽 바닥 쓸기', students: ['박도윤', '최지우'] },
+      { area: '뒤쪽 바닥 쓸기', students: ['정예준', '강하은'] },
+      { area: '밀걸레 바닥 닦기', students: ['조시우', '윤서아'] },
+      { area: '창문 및 창틀 청소', students: ['임도현', '한지민'] },
+      { area: '사물함 위 정리', students: ['서유진', '오민석'] },
+      { area: '분리수거 & 쓰레기', students: ['배성현', '송예원'] },
+      { area: '복도 및 계단 청소', students: ['남궁민', '황태경'] }
+    ];
+
+    const QUICK_SUBJECTS = ['국어', '수학', '영어', '과학', '사회', '역사', '체육', '음악', '미술', '기술가정', '도덕', '정보', '자율', '동아리', '진로'];
+
+    let timetableData = [];
+    let noticeData = [];
+    let scheduleData = [];
+    let cleaningData = [];
+    let scheduleFilterMode = 'all';
+
+    /* -------------------------------------------------------------
+     * 3. 대시보드 초기화
+     * ------------------------------------------------------------- */
+    async function initDashboard() {
+      document.getElementById('classTitle').innerText = `${appConfig.grade}학년 ${appConfig.classRoom}반 아침조회`;
+      document.getElementById('subTitle').innerText = appConfig.slogan;
+
+      // 1. 저장 데이터 로드
+      const savedNotices = localStorage.getItem(`${storageKeyPrefix}notices`);
+      noticeData = savedNotices ? JSON.parse(savedNotices) : DEFAULT_NOTICES;
+
+      const savedSchedules = localStorage.getItem(`${storageKeyPrefix}schedules`);
+      scheduleData = savedSchedules ? JSON.parse(savedSchedules) : DEFAULT_SCHEDULES;
+
+      const savedCleaning = localStorage.getItem(`${storageKeyPrefix}cleaning`);
+      cleaningData = savedCleaning ? JSON.parse(savedCleaning) : DEFAULT_CLEANING;
+
+      // 2. 엑셀 시간표 로드
+      await loadTimetable();
+
+      // 3. 화면 컴포넌트 렌더링
+      renderHeaderTodaySchedules();
+      renderNotices();
+      renderUnifiedSchedules();
+      renderCleaning();
+      fetchMealData();
+      buildQuickPills();
+
+      // 4. 시계 및 1분 주기 백그라운드 새로고침
+      updateClock();
+      setInterval(updateClock, 1000);
+      setInterval(refreshPeriodicData, 60000);
+
+      if (isTeacherUrlParam) {
+        openTeacherAdminModal();
+      }
+    }
+
+    /* -------------------------------------------------------------
+     * 4. '오늘의 핵심 일정 & 수행평가' 렌더러 (중앙 하단 메인 카드)
+     * ------------------------------------------------------------- */
+     function renderHeaderTodaySchedules() {
+      const container = document.getElementById('headerTodaySchedules');
+      if (!container) return;
+      container.innerHTML = '';
+
+      // D-Day가 'D-Day'이거나 isToday인 항목, 또는 D-1~D-3에 해당하는 임박 항목 우선 정렬
+      const todayOrUrgent = scheduleData.filter(s => s.isToday || s.dday.toLowerCase() === 'd-day' || s.isPinned);
+      const displayItems = todayOrUrgent.length > 0 ? todayOrUrgent : scheduleData.slice(0, 4);
+
+      displayItems.forEach(item => {
+        const isExam = (item.category === 'exam');
+        const isToday = (item.isToday || item.dday.toLowerCase() === 'd-day');
+        const isUrgent = isToday || item.dday === 'D-1' || item.dday === 'D-2' || item.dday === 'D-3';
+
+        const card = document.createElement('div');
+        card.onclick = () => editScheduleModal(item.id);
+        card.className = `cursor-pointer touch-btn p-2.5 rounded-xl border flex items-center justify-between gap-2 transition shadow-2xs ${
+          isToday
+            ? 'bg-rose-50 border-rose-300 hover:bg-rose-100/70'
+            : (item.isPinned ? 'bg-teal-50 border-teal-300 hover:bg-teal-100/70' : 'bg-white border-slate-200/90 hover:bg-slate-50')
+        }`;
+
+        card.innerHTML = `
+          <div class="flex items-center gap-2 min-w-0">
+            <span class="w-2.5 h-2.5 rounded-full shrink-0 ${isToday ? 'bg-rose-500 animate-ping' : (isExam ? 'bg-amber-500' : 'bg-teal-500')}"></span>
+            <div class="min-w-0">
+              <div class="flex items-center gap-1.5 mb-0.5">
+                ${item.isPinned ? `<span class="text-[9px] font-black px-1.5 py-0.2 rounded bg-teal-600 text-white flex items-center gap-0.5"><i class="fa-solid fa-thumbtack text-[8px]"></i>고정</span>` : ''}
+                <span class="text-[9px] font-extrabold px-1.5 py-0.2 rounded ${isExam ? 'bg-rose-100 text-rose-700 border border-rose-200' : 'bg-teal-100 text-teal-700 border border-teal-200'}">
+                  ${isExam ? '수행·시험' : '학사일정'}
+                </span>
+                <span class="text-[11px] font-semibold text-slate-500">${item.date}</span>
+              </div>
+              <div class="text-xs xl:text-sm font-bold text-slate-900 truncate">${item.title}</div>
+            </div>
+          </div>
+          <div class="flex items-center gap-1.5 shrink-0">
+            <span class="text-xs font-black px-2.5 py-1 rounded-lg ${isUrgent ? 'bg-rose-600 text-white animate-pulse' : 'bg-teal-700 text-white'}">
+              ${item.dday}
+            </span>
+            <span class="text-slate-300 hover:text-teal-600 text-xs p-1"><i class="fa-solid fa-pen text-[10px]"></i></span>
+          </div>
+        `;
+        container.appendChild(card);
+      });
+    }
+
+    /* -------------------------------------------------------------
+     * 5. 엑셀 시간표 연동 로더
+     * ------------------------------------------------------------- */
+    async function loadTimetable() {
+      const localOverride = localStorage.getItem(`${storageKeyPrefix}timetable_override`);
+      if (localOverride) {
+        timetableData = JSON.parse(localOverride);
+        renderTimetable();
+        return;
+      }
+
+      const dayNames = ['일', '월', '화', '수', '목', '금', '토'];
+      const todayDayName = dayNames[new Date().getDay()];
+      const queryDay = (todayDayName === '일' || todayDayName === '토') ? '월' : todayDayName;
+      document.getElementById('timetableDayLabel').innerText = `${queryDay}요일 시간표 (오늘)`;
+
+      if (appConfig.excelUrl) {
+        try {
+          const res = await fetch(encodeURI(appConfig.excelUrl) + '?t=' + Date.now());
+          if (res.ok) {
+            const arrayBuffer = await res.arrayBuffer();
+            const workbook = XLSX.read(arrayBuffer, { type: 'array' });
+            const firstSheetName = workbook.SheetNames[0];
+            const worksheet = workbook.Sheets[firstSheetName];
+            
+            const sheetData = XLSX.utils.sheet_to_json(worksheet, { header: 1, defval: '' });
+
+            let dayRowIdx = -1;
+            let periodRowIdx = -1;
+
+            for (let r = 0; r < Math.min(sheetData.length, 10); r++) {
+              const rowStr = sheetData[r].map(c => String(c).trim()).join(' ');
+              if (rowStr.includes('월') && (rowStr.includes('화') || rowStr.includes('수'))) {
+                dayRowIdx = r;
+                periodRowIdx = r + 1;
+                break;
+              }
+            }
+
+            if (dayRowIdx !== -1 && periodRowIdx !== -1) {
+              const colMap = {};
+              let currentDay = '';
+              const dayRow = sheetData[dayRowIdx];
+              const periodRow = sheetData[periodRowIdx];
+
+              for (let col = 2; col < periodRow.length; col++) {
+                const cellDay = String(dayRow[col] || '').trim();
+                const matchedDay = cellDay.match(/[월화수목금토일]/);
+                if (matchedDay) currentDay = matchedDay[0];
+
+                const periodNum = parseInt(String(periodRow[col]).trim(), 10);
+                if (currentDay && !isNaN(periodNum)) {
+                  colMap[col] = { day: currentDay, period: periodNum };
+                }
+              }
+
+              let currentParsedGrade = '';
+              let targetRow = null;
+
+              for (let r = periodRowIdx + 1; r < sheetData.length; r++) {
+                const row = sheetData[r];
+                const gradeCell = String(row[0] || '').trim();
+                const classCell = String(row[1] || '').trim();
+
+                if (gradeCell) {
+                  const gMatch = gradeCell.match(/\d+/);
+                  if (gMatch) currentParsedGrade = gMatch[0];
+                }
+
+                const cMatch = classCell.match(/\d+/);
+                const parsedClass = cMatch ? cMatch[0] : '';
+
+                if (currentParsedGrade === String(appConfig.grade).trim() && parsedClass === String(appConfig.classRoom).trim()) {
+                  targetRow = row;
+                  break;
+                }
+              }
+
+              if (targetRow) {
+                const extractedPeriods = [];
+                for (let col in colMap) {
+                  const info = colMap[col];
+                  if (info.day === queryDay) {
+                    const cellVal = String(targetRow[col] || '').trim();
+                    if (cellVal) {
+                      const parts = cellVal.split(/[\r\n\s]+/);
+                      const subject = parts[0] || '자습';
+                      const teacherOrRoom = parts.slice(1).join(' ');
+
+                      extractedPeriods.push({
+                        period: info.period,
+                        time: getDefaultTime(info.period),
+                        subject: subject,
+                        room: teacherOrRoom ? `${teacherOrRoom} 선생님` : '교실',
+                        tag: ''
+                      });
+                    }
+                  }
+                }
+
+                if (extractedPeriods.length > 0) {
+                  extractedPeriods.sort((a, b) => a.period - b.period);
+                  timetableData = extractedPeriods;
+                  document.getElementById('excelBadge').classList.remove('hidden');
+                  document.getElementById('excelBadge').innerHTML = `<i class="fa-solid fa-file-excel mr-1"></i>전체시간표.xlsx 연동됨`;
+                  renderTimetable();
+                  return;
+                }
+              }
+            }
+
+            const rows = XLSX.utils.sheet_to_json(worksheet);
+            const filtered = rows.filter(r => 
+              String(r['학년'] || r['grade'] || '').trim() === String(appConfig.grade).trim() &&
+              String(r['반'] || r['class'] || '').trim() === String(appConfig.classRoom).trim() &&
+              String(r['요일'] || r['day'] || '').trim() === queryDay
+            );
+
+            if (filtered.length > 0) {
+              filtered.sort((a, b) => Number(a['교시'] || a['period']) - Number(b['교시'] || b['period']));
+              timetableData = filtered.map(item => ({
+                period: Number(item['교시'] || item['period']),
+                time: item['시간'] || getDefaultTime(Number(item['교시'] || item['period'])),
+                subject: item['과목'] || item['subject'] || '자습',
+                room: item['교실'] || item['room'] || '교실',
+                tag: item['준비물'] || item['tag'] || ''
+              }));
+
+              document.getElementById('excelBadge').classList.remove('hidden');
+              renderTimetable();
+              return;
+            }
+          }
+        } catch (err) {
+          console.warn('엑셀 시간표 파일 호출 실패, 기본값을 사용합니다:', err);
+        }
+      }
+
+      const savedTimetable = localStorage.getItem(`${storageKeyPrefix}timetable`);
+      timetableData = savedTimetable ? JSON.parse(savedTimetable) : DEFAULT_TIMETABLE;
+      renderTimetable();
+    }
+
+    function getDefaultTime(period) {
+      const times = {
+        1: '09:00 ~ 09:45',
+        2: '09:55 ~ 10:40',
+        3: '10:50 ~ 11:35',
+        4: '11:45 ~ 12:30',
+        5: '13:30 ~ 14:15',
+        6: '14:25 ~ 15:10',
+        7: '15:20 ~ 16:05'
+      };
+      return times[period] || '';
+    }
+
+    async function reloadTimetableFromSource() {
+      localStorage.removeItem(`${storageKeyPrefix}timetable_override`);
+      await loadTimetable();
+      alert('전체시간표 엑셀 원본과 성공적으로 재동기화되었습니다!');
+    }
+
+    /* -------------------------------------------------------------
+     * 6. [요구사항 2]: 시간표 2단 렌더링 (왼쪽 1~4교시 / 오른쪽 5~7교시)
+     * ------------------------------------------------------------- */
+    let selectedPeriodIndex = null;
+
+    function renderTimetable() {
+      const grid = document.getElementById('timetableGrid');
+      grid.innerHTML = '';
+
+      // 1교시~4교시 (왼쪽) vs 5교시~7교시 (오른쪽) 매칭
+      // 행 1: 1교시 - 5교시
+      // 행 2: 2교시 - 6교시
+      // 행 3: 3교시 - 7교시
+      // 행 4: 4교시 - 종례/방과후
+      const leftMap = {};
+      const rightMap = {};
+
+      timetableData.forEach((item, index) => {
+        if (item.period <= 4) {
+          leftMap[item.period] = { item, index };
+        } else {
+          rightMap[item.period] = { item, index };
+        }
+      });
+
+      for (let p = 1; p <= 4; p++) {
+        // 왼쪽 (1, 2, 3, 4교시)
+        if (leftMap[p]) {
+          grid.appendChild(createTimetableCard(leftMap[p].item, leftMap[p].index));
+        } else {
+          const emptyCard = document.createElement('div');
+          emptyCard.className = 'p-1.5 rounded-xl bg-slate-50/50 border border-dashed border-slate-200 flex items-center justify-center text-slate-400 text-xs font-semibold h-full min-h-0';
+          emptyCard.innerHTML = `<span class="text-[11px]">${p}교시 없음</span>`;
+          grid.appendChild(emptyCard);
+        }
+
+        // 오른쪽 (5, 6, 7교시 및 방과후)
+        const rightPeriod = p + 4; // 5, 6, 7, 8
+        if (rightMap[rightPeriod]) {
+          grid.appendChild(createTimetableCard(rightMap[rightPeriod].item, rightMap[rightPeriod].index));
+        } else {
+          const extraCard = document.createElement('div');
+          extraCard.className = 'p-1.5 rounded-xl bg-slate-50/50 border border-dashed border-slate-200 flex items-center justify-center text-slate-400 text-xs font-semibold h-full min-h-0';
+          extraCard.innerHTML = `<span class="text-[11px] text-slate-400 flex items-center gap-1"><i class="fa-solid fa-moon text-indigo-400 text-[10px]"></i> 종례 및 방과후</span>`;
+          grid.appendChild(extraCard);
+        }
+      }
+    }
+
+    function createTimetableCard(item, index) {
+      const card = document.createElement('div');
+      card.onclick = () => openTimetableModal(index);
+      card.className = 'touch-btn p-1.5 xl:p-2 rounded-xl bg-slate-50 hover:bg-indigo-50/70 border border-slate-200/80 cursor-pointer transition flex items-center justify-between gap-1.5 shadow-2xs group flex-1 min-h-0';
+      
+      card.innerHTML = `
+        <div class="flex items-center gap-1.5 min-w-0">
+          <div class="w-6 h-6 rounded-lg bg-indigo-600 text-white font-black flex items-center justify-center text-[11px] shadow-xs group-hover:scale-105 transition shrink-0">
+            ${item.period}
+          </div>
+          <div class="min-w-0 leading-tight">
+            <div class="text-xs xl:text-sm font-bold text-slate-900 flex items-center gap-1 truncate">
+              <span>${item.subject}</span>
+              ${item.tag ? `<span class="text-[9px] font-semibold px-1 py-0.2 rounded bg-amber-100 text-amber-800 border border-amber-200 shrink-0">${item.tag}</span>` : ''}
+            </div>
+            <div class="text-[10px] text-slate-400 font-medium truncate">${item.time.split('~')[0].trim()} · ${item.room || '교실'}</div>
+          </div>
+        </div>
+        <div class="text-slate-300 group-hover:text-indigo-600 text-[10px] transition shrink-0">
+          <i class="fa-solid fa-pen"></i>
+        </div>
+      `;
+      return card;
+    }
+
+    function openTimetableModal(index) {
+      selectedPeriodIndex = index;
+      const target = timetableData[index];
+      document.getElementById('modalPeriodTitle').innerText = `${target.period}교시 (${target.time}) 수업 변경`;
+      document.getElementById('modalSubjectInput').value = target.subject;
+      document.getElementById('modalRoomInput').value = (target.room || '') + (target.tag ? ` / ${target.tag}` : '');
+      
+      const modal = document.getElementById('timetableModal');
+      modal.classList.remove('hidden');
+      modal.classList.add('flex');
+    }
+
+    function closeTimetableModal() {
+      const modal = document.getElementById('timetableModal');
+      modal.classList.add('hidden');
+      modal.classList.remove('flex');
+      selectedPeriodIndex = null;
+    }
+
+    function saveTimetableModal() {
+      if (selectedPeriodIndex === null) return;
+      const newSubject = document.getElementById('modalSubjectInput').value.trim() || '자습';
+      const detail = document.getElementById('modalRoomInput').value.trim();
+
+      timetableData[selectedPeriodIndex].subject = newSubject;
+      if (detail.includes('/')) {
+        const parts = detail.split('/');
+        timetableData[selectedPeriodIndex].room = parts[0].trim();
+        timetableData[selectedPeriodIndex].tag = parts[1].trim();
+      } else {
+        timetableData[selectedPeriodIndex].room = detail || '교실';
+        timetableData[selectedPeriodIndex].tag = '';
+      }
+
+      localStorage.setItem(`${storageKeyPrefix}timetable_override`, JSON.stringify(timetableData));
+      renderTimetable();
+      closeTimetableModal();
+    }
+
+    function buildQuickPills() {
+      const pillBox = document.getElementById('quickSubjectPills');
+      pillBox.innerHTML = '';
+      QUICK_SUBJECTS.forEach(sub => {
+        const btn = document.createElement('button');
+        btn.type = 'button';
+        btn.onclick = () => {
+          document.getElementById('modalSubjectInput').value = sub;
+        };
+        btn.className = 'touch-btn px-2.5 py-1 rounded-lg bg-slate-100 hover:bg-blue-100 text-slate-700 hover:text-blue-700 text-xs font-semibold transition';
+        btn.innerText = sub;
+        pillBox.appendChild(btn);
+      });
+    }
+
+    /* -------------------------------------------------------------
+     * 7. 담임 알림장 렌더링 (확장된 세로 높이 + 스크롤)
+     * ------------------------------------------------------------- */
+    function renderNotices() {
+      const container = document.getElementById('noticeContainer');
+      container.innerHTML = '';
+
+      const sorted = [...noticeData].sort((a, b) => {
+        if (a.isPinned === b.isPinned) return 0;
+        return a.isPinned ? -1 : 1;
+      });
+
+      sorted.forEach((n) => {
+        const card = document.createElement('div');
+        const badgeColors = {
+          urgent: 'bg-rose-100 text-rose-700 border-rose-200',
+          info: 'bg-blue-100 text-blue-700 border-blue-200',
+          event: 'bg-emerald-100 text-emerald-700 border-emerald-200'
+        };
+        const colorClass = badgeColors[n.type] || 'bg-slate-100 text-slate-700 border-slate-200';
+
+        card.className = `p-3.5 rounded-xl border transition relative ${n.isPinned ? 'pinned-item shadow-xs border-red-200' : 'bg-slate-50 border-slate-200/80'}`;
+        card.innerHTML = `
+          <div class="flex items-center justify-between gap-2 mb-1.5">
+            <div class="flex items-center gap-1.5 flex-wrap">
+              ${n.isPinned ? `<span class="text-[10px] font-black px-1.5 py-0.5 rounded bg-red-600 text-white flex items-center gap-1"><i class="fa-solid fa-thumbtack text-[9px]"></i> 고정</span>` : ''}
+              <span class="text-[10px] font-extrabold px-1.5 py-0.5 rounded border ${colorClass}">
+                ${n.badge || '공지'}
+              </span>
+              <h4 class="font-bold text-slate-900 text-base xl:text-lg">${n.title}</h4>
+            </div>
+            <div class="flex items-center gap-1 shrink-0">
+              <button onclick="toggleNoticePin(${n.id})" class="text-xs p-1 ${n.isPinned ? 'text-red-500 hover:text-slate-400' : 'text-slate-300 hover:text-red-500'} transition" title="${n.isPinned ? '고정 해제' : '최상단 고정'}">
+                <i class="fa-solid fa-thumbtack"></i>
+              </button>
+              <button onclick="editNoticeModal(${n.id})" class="text-xs p-1 text-slate-400 hover:text-slate-700 transition" title="수정">
+                <i class="fa-solid fa-pen"></i>
+              </button>
+            </div>
+          </div>
+          <p class="text-sm text-slate-600 whitespace-pre-line pl-0.5 leading-relaxed">${n.content}</p>
+        `;
+        container.appendChild(card);
+      });
+    }
+
+    function toggleNoticePin(id) {
+      const target = noticeData.find(item => item.id === id);
+      if (target) {
+        target.isPinned = !target.isPinned;
+        localStorage.setItem(`${storageKeyPrefix}notices`, JSON.stringify(noticeData));
+        renderNotices();
+      }
+    }
+
+    function openNoticeModal() {
+      document.getElementById('noticeEditIndex').value = '-1';
+      document.getElementById('noticeTitleInput').value = '';
+      document.getElementById('noticeContentInput').value = '';
+      document.getElementById('noticePinCheck').checked = false;
+      document.getElementById('btnDeleteNotice').classList.add('hidden');
+
+      const modal = document.getElementById('noticeModal');
+      modal.classList.remove('hidden');
+      modal.classList.add('flex');
+    }
+
+    function editNoticeModal(id) {
+      const target = noticeData.find(n => n.id === id);
+      if (!target) return;
+
+      document.getElementById('noticeEditIndex').value = id;
+      document.getElementById('noticeTitleInput').value = target.title;
+      document.getElementById('noticeContentInput').value = target.content;
+      document.getElementById('noticePinCheck').checked = !!target.isPinned;
+
+      const radios = document.getElementsByName('noticeType');
+      radios.forEach(r => { r.checked = (r.value === target.type); });
+
+      document.getElementById('btnDeleteNotice').classList.remove('hidden');
+
+      const modal = document.getElementById('noticeModal');
+      modal.classList.remove('hidden');
+      modal.classList.add('flex');
+    }
+
+    function closeNoticeModal() {
+      const modal = document.getElementById('noticeModal');
+      modal.classList.add('hidden');
+      modal.classList.remove('flex');
+    }
+
+    function saveNoticeModal() {
+      const id = parseInt(document.getElementById('noticeEditIndex').value, 10);
+      const title = document.getElementById('noticeTitleInput').value.trim();
+      const content = document.getElementById('noticeContentInput').value.trim();
+      const isPinned = document.getElementById('noticePinCheck').checked;
+
+      let selectedType = 'urgent';
+      const radios = document.getElementsByName('noticeType');
+      radios.forEach(r => { if (r.checked) selectedType = r.value; });
+
+      const badgeMap = { urgent: '필독', info: '안내', event: '행사' };
+
+      if (!title) {
+        alert('공지 제목을 입력해주세요.');
+        return;
+      }
+
+      if (id === -1) {
+        noticeData.unshift({
+          id: Date.now(),
+          type: selectedType,
+          badge: badgeMap[selectedType] || '공지',
+          title: title,
+          content: content,
+          isPinned: isPinned
+        });
+      } else {
+        const target = noticeData.find(n => n.id === id);
+        if (target) {
+          target.type = selectedType;
+          target.badge = badgeMap[selectedType] || '공지';
+          target.title = title;
+          target.content = content;
+          target.isPinned = isPinned;
+        }
+      }
+
+      localStorage.setItem(`${storageKeyPrefix}notices`, JSON.stringify(noticeData));
+      renderNotices();
+      closeNoticeModal();
+      if (!document.getElementById('teacherAdminModal').classList.contains('hidden')) {
+        renderTeacherNotices();
+      }
+    }
+
+    function deleteCurrentNotice() {
+      const id = parseInt(document.getElementById('noticeEditIndex').value, 10);
+      if (confirm('이 공지사항을 삭제하시겠습니까?')) {
+        noticeData = noticeData.filter(n => n.id !== id);
+        localStorage.setItem(`${storageKeyPrefix}notices`, JSON.stringify(noticeData));
+        renderNotices();
+        closeNoticeModal();
+        if (!document.getElementById('teacherAdminModal').classList.contains('hidden')) {
+          renderTeacherNotices();
+        }
+      }
+    }
+
+    /* -------------------------------------------------------------
+     * 8. 오늘의 급식 렌더러
+     * ------------------------------------------------------------- */
+    async function fetchMealData() {
+      if (!appConfig.neisSchoolCode || !appConfig.neisOfficeCode) {
+        renderMealView(DEFAULT_MEAL);
+        return;
+      }
+
+      try {
+        const now = new Date();
+        const yyyymmdd = now.toISOString().slice(0, 10).replace(/-/g, '');
+        let url = `https://open.neis.go.kr/hub/mealServiceDietInfo?Type=json&pIndex=1&pSize=1&ATPT_OFCDC_SC_CODE=${appConfig.neisOfficeCode}&SD_SCHUL_CODE=${appConfig.neisSchoolCode}&MLSV_YMD=${yyyymmdd}`;
+        if (appConfig.neisApiKey) url += `&KEY=${appConfig.neisApiKey}`;
+
+        const res = await fetch(url);
+        const data = await res.json();
+
+        if (data.mealServiceDietInfo && data.mealServiceDietInfo[1].row) {
+          const row = data.mealServiceDietInfo[1].row[0];
+          const rawDish = row.DDISH_NM.replace(/[0-9\.\(\)\*]/g, '').trim();
+          const dishes = rawDish.split('<br/>').map(d => d.trim()).filter(Boolean);
+          const calories = row.CAL_INFO || '정보 없음';
+
+          renderMealView({ calories: calories, dishes: dishes, isSample: false });
+        } else {
+          renderMealView(DEFAULT_MEAL);
+        }
+      } catch (err) {
+        console.warn('NEIS 급식 호출 실패, 샘플 표시:', err);
+        renderMealView(DEFAULT_MEAL);
+      }
+    }
+
+    function renderMealView(meal) {
+      document.getElementById('mealCaloriesBadge').innerText = meal.calories;
+      document.getElementById('mealSourceText').innerText = meal.isSample ? '샘플 급식' : 'NEIS 연동';
+
+      const dishContainer = document.getElementById('mealDishList');
+      dishContainer.innerHTML = '';
+
+      meal.dishes.forEach(dish => {
+        const span = document.createElement('span');
+        span.className = 'px-2 py-0.5 rounded-lg bg-rose-50 border border-rose-200/90 text-rose-900 text-[11px] font-bold shadow-2xs flex items-center gap-1 shrink-0 whitespace-nowrap leading-none';
+        span.innerHTML = `<span class="w-1.5 h-1.5 rounded-full bg-rose-500 shrink-0"></span>${dish}`;
+        dishContainer.appendChild(span);
+      });
+    }
+
+    /* -------------------------------------------------------------
+     * 9. [요구사항 3]: 청소 구역 & 당번 (좌/우 4칸씩 총 8칸 그리드, 스크롤 없이 한눈에 보기)
+     * ------------------------------------------------------------- */
+    function renderCleaning() {
+      const grid = document.getElementById('cleaningDutyGrid');
+      grid.innerHTML = '';
+
+      cleaningData.forEach((c, idx) => {
+        const card = document.createElement('div');
+        card.className = 'p-1.5 rounded-xl border border-slate-200/80 bg-slate-50 hover:bg-emerald-50/50 cursor-pointer transition flex items-center justify-between gap-1.5 shadow-2xs h-full min-h-0';
+        card.onclick = () => openCleaningModal();
+        
+        card.innerHTML = `
+          <div class="flex items-center gap-1.5 min-w-0 flex-1">
+            <span class="w-1.5 h-1.5 rounded-full bg-emerald-500 shrink-0"></span>
+            <span class="text-xs font-bold text-slate-800 truncate">${c.area}</span>
+          </div>
+          <div class="flex items-center gap-1 shrink-0">
+            ${c.students.map(name => `<span class="px-1.5 py-0.5 rounded-md bg-white border border-slate-200 text-slate-800 text-[10px] xl:text-[11px] font-bold shadow-2xs">${name}</span>`).join('')}
+            <span class="text-slate-300 hover:text-emerald-600 text-[9px] ml-0.5"><i class="fa-solid fa-pen"></i></span>
+          </div>
+        `;
+        grid.appendChild(card);
+      });
+    }
+
+    function openCleaningModal() {
+      const rowBox = document.getElementById('cleaningModalRows');
+      rowBox.innerHTML = '';
+
+      cleaningData.forEach((c, idx) => {
+        const div = document.createElement('div');
+        div.className = 'p-3 bg-slate-50 rounded-xl border border-slate-200 flex flex-col gap-2';
+        div.innerHTML = `
+          <div class="flex items-center justify-between gap-2">
+            <input type="text" value="${c.area}" class="cleaning-area-input w-1/3 px-2.5 py-1.5 border rounded-lg text-xs font-bold" placeholder="구역명">
+            <button onclick="deleteCleaningRow(${idx})" class="text-rose-500 hover:text-rose-700 text-xs font-bold px-2 py-1">
+              <i class="fa-solid fa-trash mr-1"></i>삭제
+            </button>
+          </div>
+          <input type="text" value="${c.students.join(', ')}" class="cleaning-students-input w-full px-2.5 py-1.5 border rounded-lg text-xs" placeholder="학생 이름들을 쉼표(,)로 구분하여 입력">
+        `;
+        rowBox.appendChild(div);
+      });
+
+      const modal = document.getElementById('cleaningModal');
+      modal.classList.remove('hidden');
+      modal.classList.add('flex');
+    }
+
+    function addCleaningAreaRow() {
+      const rowBox = document.getElementById('cleaningModalRows');
+      const div = document.createElement('div');
+      div.className = 'p-3 bg-slate-50 rounded-xl border border-slate-200 flex flex-col gap-2';
+      div.innerHTML = `
+        <div class="flex items-center justify-between gap-2">
+          <input type="text" value="" class="cleaning-area-input w-1/3 px-2.5 py-1.5 border rounded-lg text-xs font-bold" placeholder="새 구역명 (예: 창문 청소)">
+          <button onclick="this.parentElement.parentElement.remove()" class="text-rose-500 hover:text-rose-700 text-xs font-bold px-2 py-1">
+            <i class="fa-solid fa-trash mr-1"></i>삭제
+          </button>
+        </div>
+        <input type="text" value="" class="cleaning-students-input w-full px-2.5 py-1.5 border rounded-lg text-xs" placeholder="학생 이름들을 쉼표(,)로 구분하여 입력">
+      `;
+      rowBox.appendChild(div);
+    }
+
+    function deleteCleaningRow(idx) {
+      cleaningData.splice(idx, 1);
+      openCleaningModal();
+    }
+
+    function closeCleaningModal() {
+      const modal = document.getElementById('cleaningModal');
+      modal.classList.add('hidden');
+      modal.classList.remove('flex');
+    }
+
+    function saveCleaningModal() {
+      const areaInputs = document.querySelectorAll('.cleaning-area-input');
+      const studentInputs = document.querySelectorAll('.cleaning-students-input');
+
+      const newCleaning = [];
+      areaInputs.forEach((input, i) => {
+        const area = input.value.trim();
+        const rawStudents = studentInputs[i].value.trim();
+        if (area) {
+          const students = rawStudents.split(/[,/]+/).map(s => s.trim()).filter(Boolean);
+          newCleaning.push({ area, students });
+        }
+      });
+
+      cleaningData = newCleaning;
+      localStorage.setItem(`${storageKeyPrefix}cleaning`, JSON.stringify(cleaningData));
+      renderCleaning();
+      closeCleaningModal();
+
+      if (!document.getElementById('teacherAdminModal').classList.contains('hidden')) {
+        renderTeacherCleaning();
+      }
+    }
+
+    /* -------------------------------------------------------------
+     * 10. 주요 학사 일정 & 수행평가 통합 렌더러
+     * ------------------------------------------------------------- */
+    function filterScheduleCategory(cat) {
+      scheduleFilterMode = cat;
+      document.getElementById('filterBtnAll').className = cat === 'all' ? 'px-2.5 py-0.5 rounded-lg text-xs font-bold bg-teal-600 text-white transition' : 'px-2.5 py-0.5 rounded-lg text-xs font-bold bg-slate-100 text-slate-600 hover:bg-slate-200 transition';
+      document.getElementById('filterBtnExam').className = cat === 'exam' ? 'px-2.5 py-0.5 rounded-lg text-xs font-bold bg-rose-600 text-white transition' : 'px-2.5 py-0.5 rounded-lg text-xs font-bold bg-slate-100 text-slate-600 hover:bg-slate-200 transition';
+      document.getElementById('filterBtnSchool').className = cat === 'school' ? 'px-2.5 py-0.5 rounded-lg text-xs font-bold bg-teal-600 text-white transition' : 'px-2.5 py-0.5 rounded-lg text-xs font-bold bg-slate-100 text-slate-600 hover:bg-slate-200 transition';
+      renderUnifiedSchedules();
+    }
+
+    function renderUnifiedSchedules() {
+      const container = document.getElementById('unifiedScheduleContainer');
+      container.innerHTML = '';
+
+      let filtered = scheduleData;
+      if (scheduleFilterMode !== 'all') {
+        filtered = scheduleData.filter(item => item.category === scheduleFilterMode);
+      }
+
+      const sorted = [...filtered].sort((a, b) => {
+        if (a.isPinned === b.isPinned) return 0;
+        return a.isPinned ? -1 : 1;
+      });
+
+      if (sorted.length === 0) {
+        container.innerHTML = `<div class="p-3 text-center text-xs text-slate-400 font-semibold">등록된 일정이 없습니다.</div>`;
+        return;
+      }
+
+      sorted.forEach(s => {
+        const item = document.createElement('div');
+        const isExam = (s.category === 'exam');
+        const isToday = s.isToday || s.dday.toLowerCase() === 'd-day';
+        const isUrgent = isToday || s.dday === 'D-1' || s.dday === 'D-2' || s.dday === 'D-3';
+
+        item.className = `p-2 rounded-xl border transition flex items-center justify-between gap-2 cursor-pointer ${
+          s.isPinned 
+            ? 'pinned-schedule border-teal-300 shadow-2xs' 
+            : (isExam ? 'bg-rose-50/40 border-rose-200/80 hover:bg-rose-50' : 'bg-slate-50 border-slate-200/80 hover:bg-slate-100/70')
+        }`;
+
+        item.onclick = (e) => {
+          if (!e.target.closest('button')) {
+            editScheduleModal(s.id);
+          }
+        };
+
+        item.innerHTML = `
+          <div class="flex-1 min-w-0">
+            <div class="flex items-center gap-1.5 mb-0.5">
+              ${s.isPinned ? `<span class="text-[9px] font-black px-1 py-0.2 rounded bg-teal-600 text-white flex items-center gap-0.5"><i class="fa-solid fa-thumbtack text-[8px]"></i>고정</span>` : ''}
+              <span class="text-[9px] font-extrabold px-1.5 py-0.2 rounded ${isExam ? 'bg-rose-100 text-rose-700 border border-rose-200' : 'bg-teal-100 text-teal-700 border border-teal-200'}">
+                ${isExam ? '수행·시험' : '학사일정'}
+              </span>
+              <span class="text-[11px] font-semibold ${isUrgent ? 'text-rose-600 font-bold' : 'text-slate-500'}">${s.date}</span>
+            </div>
+            <div class="text-xs xl:text-sm font-bold text-slate-900 truncate">${s.title}</div>
+          </div>
+
+          <div class="flex items-center gap-1.5 shrink-0">
+            <span class="text-[11px] font-black px-2 py-0.5 rounded-md ${isUrgent ? 'bg-rose-600 text-white' : 'bg-teal-700 text-white'}">
+              ${s.dday}
+            </span>
+            <button onclick="toggleSchedulePin(${s.id})" class="text-xs p-1 ${s.isPinned ? 'text-teal-600 hover:text-slate-400' : 'text-slate-300 hover:text-teal-600'} transition" title="고정 토글">
+              <i class="fa-solid fa-thumbtack"></i>
+            </button>
+            <button onclick="editScheduleModal(${s.id})" class="text-xs p-1 text-slate-400 hover:text-slate-700 transition" title="수정">
+              <i class="fa-solid fa-pen"></i>
+            </button>
+          </div>
+        `;
+        container.appendChild(item);
+      });
+    }
+
+    function toggleSchedulePin(id) {
+      const target = scheduleData.find(item => item.id === id);
+      if (target) {
+        target.isPinned = !target.isPinned;
+        localStorage.setItem(`${storageKeyPrefix}schedules`, JSON.stringify(scheduleData));
+        renderUnifiedSchedules();
+        renderHeaderTodaySchedules();
+        if (!document.getElementById('teacherAdminModal').classList.contains('hidden')) {
+          renderTeacherSchedules();
+        }
+      }
+    }
+
+    function openScheduleModal() {
+      document.getElementById('scheduleEditId').value = '-1';
+      document.getElementById('scheduleTitleInput').value = '';
+      document.getElementById('scheduleDateInput').value = '';
+      document.getElementById('scheduleDdayInput').value = 'D-Day';
+      document.getElementById('schedulePinCheck').checked = false;
+      document.getElementById('btnDeleteSchedule').classList.add('hidden');
+
+      const radios = document.getElementsByName('scheduleCategory');
+      radios[0].checked = true;
+
+      const modal = document.getElementById('scheduleModal');
+      modal.classList.remove('hidden');
+      modal.classList.add('flex');
+    }
+
+    function editScheduleModal(id) {
+      const target = scheduleData.find(s => s.id === id);
+      if (!target) return;
+
+      document.getElementById('scheduleEditId').value = id;
+      document.getElementById('scheduleTitleInput').value = target.title;
+      document.getElementById('scheduleDateInput').value = target.date;
+      document.getElementById('scheduleDdayInput').value = target.dday;
+      document.getElementById('schedulePinCheck').checked = !!target.isPinned;
+
+      const radios = document.getElementsByName('scheduleCategory');
+      radios.forEach(r => { r.checked = (r.value === target.category); });
+
+      document.getElementById('btnDeleteSchedule').classList.remove('hidden');
+
+      const modal = document.getElementById('scheduleModal');
+      modal.classList.remove('hidden');
+      modal.classList.add('flex');
+    }
+
+    function closeScheduleModal() {
+      const modal = document.getElementById('scheduleModal');
+      modal.classList.add('hidden');
+      modal.classList.remove('flex');
+    }
+
+    function saveScheduleModal() {
+      const id = parseInt(document.getElementById('scheduleEditId').value, 10);
+      const title = document.getElementById('scheduleTitleInput').value.trim();
+      const dateStr = document.getElementById('scheduleDateInput').value.trim() || '오늘';
+      const ddayStr = document.getElementById('scheduleDdayInput').value.trim() || 'D-Day';
+      const isPinned = document.getElementById('schedulePinCheck').checked;
+
+      let selectedCategory = 'exam';
+      const radios = document.getElementsByName('scheduleCategory');
+      radios.forEach(r => { if (r.checked) selectedCategory = r.value; });
+
+      if (!title) {
+        alert('일정/평가명을 입력해주세요.');
+        return;
+      }
+
+      if (id === -1) {
+        scheduleData.push({
+          id: Date.now(),
+          category: selectedCategory,
+          date: dateStr,
+          title: title,
+          dday: ddayStr,
+          isToday: ddayStr.toLowerCase() === 'd-day',
+          isPinned: isPinned
+        });
+      } else {
+        const target = scheduleData.find(s => s.id === id);
+        if (target) {
+          target.category = selectedCategory;
+          target.date = dateStr;
+          target.title = title;
+          target.dday = ddayStr;
+          target.isToday = ddayStr.toLowerCase() === 'd-day';
+          target.isPinned = isPinned;
+        }
+      }
+
+      localStorage.setItem(`${storageKeyPrefix}schedules`, JSON.stringify(scheduleData));
+      renderUnifiedSchedules();
+      renderHeaderTodaySchedules();
+      closeScheduleModal();
+      if (!document.getElementById('teacherAdminModal').classList.contains('hidden')) {
+        renderTeacherSchedules();
+      }
+    }
+
+    function deleteCurrentSchedule() {
+      const id = parseInt(document.getElementById('scheduleEditId').value, 10);
+      if (confirm('이 일정을 삭제하시겠습니까?')) {
+        scheduleData = scheduleData.filter(s => s.id !== id);
+        localStorage.setItem(`${storageKeyPrefix}schedules`, JSON.stringify(scheduleData));
+        renderUnifiedSchedules();
+        renderHeaderTodaySchedules();
+        closeScheduleModal();
+        if (!document.getElementById('teacherAdminModal').classList.contains('hidden')) {
+          renderTeacherSchedules();
+        }
+      }
+    }
+
+    /* -------------------------------------------------------------
+     * 11. 교사용 원격 관리 모달 제어
+     * ------------------------------------------------------------- */
+    function openTeacherAdminModal() {
+      renderTeacherNotices();
+      renderTeacherSchedules();
+      renderTeacherCleaning();
+      renderTeacherTimetable();
+      const modal = document.getElementById('teacherAdminModal');
+      modal.classList.remove('hidden');
+      modal.classList.add('flex');
+    }
+
+    function closeTeacherAdminModal() {
+      const modal = document.getElementById('teacherAdminModal');
+      modal.classList.add('hidden');
+      modal.classList.remove('flex');
+    }
+
+    function switchTeacherTab(tab) {
+      document.getElementById('teacherTabNotice').classList.toggle('hidden', tab !== 'notice');
+      document.getElementById('teacherTabSchedule').classList.toggle('hidden', tab !== 'schedule');
+      document.getElementById('teacherTabCleaning').classList.toggle('hidden', tab !== 'cleaning');
+      document.getElementById('teacherTabTimetable').classList.toggle('hidden', tab !== 'timetable');
+
+      const tabs = ['notice', 'schedule', 'cleaning', 'timetable'];
+      tabs.forEach(t => {
+        const btn = document.getElementById(`tab${t.charAt(0).toUpperCase() + t.slice(1)}Btn`);
+        if (btn) {
+          btn.className = (t === tab)
+            ? 'py-2 px-3 font-bold text-xs xl:text-sm border-b-2 border-indigo-600 text-indigo-600 shrink-0'
+            : 'py-2 px-3 font-bold text-xs xl:text-sm text-slate-500 hover:text-slate-700 shrink-0';
+        }
+      });
+    }
+
+    function renderTeacherNotices() {
+      const container = document.getElementById('teacherNoticeList');
+      container.innerHTML = '';
+      noticeData.forEach(n => {
+        const item = document.createElement('div');
+        item.className = 'flex items-center justify-between p-3 rounded-xl border bg-slate-50';
+        item.innerHTML = `
+          <div>
+            <div class="flex items-center gap-1.5 font-bold text-slate-800">
+              ${n.isPinned ? '<span class="text-xs text-red-600 font-black">📌 [고정]</span>' : ''}
+              <span>${n.title}</span>
+            </div>
+            <div class="text-xs text-slate-500 truncate max-w-md">${n.content}</div>
+          </div>
+          <div class="flex items-center gap-2">
+            <button onclick="editNoticeModal(${n.id})" class="px-2.5 py-1 bg-white border border-slate-200 text-slate-700 rounded-lg text-xs font-bold hover:bg-slate-100">
+              수정
+            </button>
+          </div>
+        `;
+        container.appendChild(item);
+      });
+    }
+
+    function renderTeacherSchedules() {
+      const container = document.getElementById('teacherScheduleList');
+      container.innerHTML = '';
+      scheduleData.forEach(s => {
+        const item = document.createElement('div');
+        item.className = 'flex items-center justify-between p-3 rounded-xl border bg-slate-50';
+        item.innerHTML = `
+          <div>
+            <div class="flex items-center gap-1.5 font-bold text-slate-800">
+              ${s.isPinned ? '<span class="text-xs text-teal-600 font-black">📌 [고정]</span>' : ''}
+              <span class="text-xs px-1.5 py-0.2 rounded ${s.category === 'exam' ? 'bg-rose-100 text-rose-700' : 'bg-teal-100 text-teal-700'}">${s.category === 'exam' ? '수행/시험' : '학사일정'}</span>
+              <span>${s.title}</span>
+            </div>
+            <div class="text-xs text-slate-500">${s.date} · ${s.dday}</div>
+          </div>
+          <div class="flex items-center gap-2">
+            <button onclick="editScheduleModal(${s.id})" class="px-2.5 py-1 bg-white border border-slate-200 text-slate-700 rounded-lg text-xs font-bold hover:bg-slate-100">
+              수정
+            </button>
+          </div>
+        `;
+        container.appendChild(item);
+      });
+    }
+
+    function renderTeacherCleaning() {
+      const container = document.getElementById('teacherCleaningPreview');
+      container.innerHTML = '';
+      cleaningData.forEach(c => {
+        const item = document.createElement('div');
+        item.className = 'p-2.5 rounded-xl border bg-slate-50 flex items-center justify-between';
+        item.innerHTML = `
+          <div>
+            <div class="text-xs font-bold text-slate-700">${c.area}</div>
+            <div class="text-xs text-slate-500 font-medium">${c.students.join(', ')}</div>
+          </div>
+          <button onclick="openCleaningModal()" class="px-2 py-1 bg-white border text-xs font-bold rounded-lg hover:bg-slate-100">
+            수정
+          </button>
+        `;
+        container.appendChild(item);
+      });
+    }
+
+    function renderTeacherTimetable() {
+      const container = document.getElementById('teacherTimetableRows');
+      container.innerHTML = '';
+      timetableData.forEach((item, idx) => {
+        const row = document.createElement('div');
+        row.className = 'grid grid-cols-12 gap-2 items-center p-2 rounded-xl bg-slate-50 border';
+        row.innerHTML = `
+          <div class="col-span-2 font-bold text-slate-700 text-xs">${item.period}교시</div>
+          <div class="col-span-4">
+            <input type="text" value="${item.subject}" onchange="updateTeacherTimetableSubject(${idx}, this.value)" class="w-full px-2 py-1 border rounded text-xs font-bold">
+          </div>
+          <div class="col-span-6">
+            <input type="text" value="${(item.room || '') + (item.tag ? ' / ' + item.tag : '')}" onchange="updateTeacherTimetableDetail(${idx}, this.value)" class="w-full px-2 py-1 border rounded text-xs" placeholder="교실 / 준비물">
+          </div>
+        `;
+        container.appendChild(row);
+      });
+    }
+
+    function updateTeacherTimetableSubject(idx, val) {
+      timetableData[idx].subject = val;
+      localStorage.setItem(`${storageKeyPrefix}timetable_override`, JSON.stringify(timetableData));
+      renderTimetable();
+    }
+
+    function updateTeacherTimetableDetail(idx, val) {
+      if (val.includes('/')) {
+        const parts = val.split('/');
+        timetableData[idx].room = parts[0].trim();
+        timetableData[idx].tag = parts[1].trim();
+      } else {
+        timetableData[idx].room = val.trim();
+        timetableData[idx].tag = '';
+      }
+      localStorage.setItem(`${storageKeyPrefix}timetable_override`, JSON.stringify(timetableData));
+      renderTimetable();
+    }
+
+    /* -------------------------------------------------------------
+     * 12. 공통 시계, 주기 동기화 및 설정 모달
+     * ------------------------------------------------------------- */
+    function updateClock() {
+      const now = new Date();
+      const days = ['일', '월', '화', '수', '목', '금', '토'];
+      document.getElementById('currentDate').innerText = `${now.getFullYear()}년 ${now.getMonth() + 1}월 ${now.getDate()}일 (${days[now.getDay()]})`;
+      document.getElementById('currentTime').innerText = `${String(now.getHours()).padStart(2, '0')}:${String(now.getMinutes()).padStart(2, '0')}:${String(now.getSeconds()).padStart(2, '0')}`;
+    }
+
+    function refreshPeriodicData() {
+      const now = new Date();
+      document.getElementById('lastUpdatedTime').innerText = `최근 동기화: ${String(now.getHours()).padStart(2, '0')}:${String(now.getMinutes()).padStart(2, '0')}`;
+      if (!localStorage.getItem(`${storageKeyPrefix}timetable_override`)) {
+        loadTimetable();
+      }
+    }
+
+    function toggleFullScreen() {
+      const icon = document.getElementById('fullscreenIcon');
+      if (!document.fullscreenElement) {
+        document.documentElement.requestFullscreen().catch(e => alert(e.message));
+        icon.className = 'fa-solid fa-compress';
+      } else {
+        if (document.exitFullscreen) {
+          document.exitFullscreen();
+          icon.className = 'fa-solid fa-expand';
+        }
+      }
+    }
+
+    function openSettingsModal() {
+      document.getElementById('settingGrade').value = appConfig.grade;
+      document.getElementById('settingClass').value = appConfig.classRoom;
+      document.getElementById('settingSlogan').value = appConfig.slogan;
+      document.getElementById('settingExcelUrl').value = appConfig.excelUrl;
+      document.getElementById('settingSheetUrl').value = appConfig.googleSheetUrl;
+      document.getElementById('settingNeisEduOffice').value = appConfig.neisOfficeCode;
+      document.getElementById('settingNeisSchoolCode').value = appConfig.neisSchoolCode;
+      document.getElementById('settingNeisApiKey').value = appConfig.neisApiKey;
+
+      const modal = document.getElementById('settingsModal');
+      modal.classList.remove('hidden');
+      modal.classList.add('flex');
+    }
+
+    function closeSettingsModal() {
+      const modal = document.getElementById('settingsModal');
+      modal.classList.add('hidden');
+      modal.classList.remove('flex');
+    }
+
+    function saveDashboardSettings() {
+      const g = document.getElementById('settingGrade').value.trim() || '1';
+      const c = document.getElementById('settingClass').value.trim() || '2';
+      const slogan = document.getElementById('settingSlogan').value.trim() || '오늘도 활기차고 행복한 하루 보내세요!';
+      const excelUrl = document.getElementById('settingExcelUrl').value.trim() || '전체시간표/전체시간표.xlsx';
+      const sheetUrl = document.getElementById('settingSheetUrl').value.trim();
+      const officeCode = document.getElementById('settingNeisEduOffice').value.trim() || 'B10';
+      const schoolCode = document.getElementById('settingNeisSchoolCode').value.trim();
+      const apiKey = document.getElementById('settingNeisApiKey').value.trim();
+
+      localStorage.setItem('class_grade', g);
+      localStorage.setItem('class_room', c);
+      localStorage.setItem(`${storageKeyPrefix}slogan`, slogan);
+      localStorage.setItem(`smartboard_excel_url`, excelUrl);
+      localStorage.setItem(`${storageKeyPrefix}sheet_url`, sheetUrl);
+      localStorage.setItem(`smartboard_neis_office`, officeCode);
+      localStorage.setItem(`smartboard_neis_school`, schoolCode);
+      localStorage.setItem(`smartboard_neis_key`, apiKey);
+
+      window.location.search = `?grade=${g}&class=${c}`;
+    }
+
+    function resetToDefaults() {
+      if (confirm('모든 로컬 변경 사항을 기본값으로 초기화하시겠습니까?')) {
+        localStorage.clear();
+        window.location.search = '';
+      }
+    }
+
+    window.addEventListener('DOMContentLoaded', initDashboard);
+  </script>
+</body>
+</html>
