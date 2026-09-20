@@ -740,11 +740,11 @@
           <div class="grid grid-cols-2 gap-2 mb-2">
             <div>
               <span class="text-[10px] text-slate-500 block mb-0.5">시도교육청코드</span>
-              <input type="text" id="settingNeisEduOffice" class="w-full px-2.5 py-1.5 border rounded-lg text-xs font-mono" placeholder="예: B10 (서울)">
+              <input type="text" id="settingNeisEduOffice" class="w-full px-2.5 py-1.5 border rounded-lg text-xs font-mono" placeholder="예: S10 (경남)">
             </div>
             <div>
               <span class="text-[10px] text-slate-500 block mb-0.5">표준학교코드 (7자리)</span>
-              <input type="text" id="settingNeisSchoolCode" class="w-full px-2.5 py-1.5 border rounded-lg text-xs font-mono" placeholder="예: 7010057">
+              <input type="text" id="settingNeisSchoolCode" class="w-full px-2.5 py-1.5 border rounded-lg text-xs font-mono" placeholder="예: 9022169 (창원여중)">
             </div>
           </div>
           <input type="text" id="settingNeisApiKey" class="w-full px-2.5 py-1.5 border rounded-lg text-xs" placeholder="NEIS API Key (인증키 없을 경우 공백)">
@@ -784,8 +784,8 @@
       slogan: localStorage.getItem(`${storageKeyPrefix}slogan`) || '오늘도 활기차고 배움이 넘치는 하루 보내세요!',
       excelUrl: localStorage.getItem(`smartboard_excel_url`) || '전체시간표/전체시간표.xlsx',
       googleSheetUrl: localStorage.getItem(`${storageKeyPrefix}sheet_url`) || '',
-      neisOfficeCode: localStorage.getItem(`smartboard_neis_office`) || 'B10',
-      neisSchoolCode: localStorage.getItem(`smartboard_neis_school`) || '',
+      neisOfficeCode: localStorage.getItem(`smartboard_neis_office`) || 'S10',
+      neisSchoolCode: localStorage.getItem(`smartboard_neis_school`) || '9022169',
       neisApiKey: localStorage.getItem(`smartboard_neis_key`) || ''
     };
 
@@ -1439,23 +1439,53 @@
       }
 
       try {
+        // 한국 시간대(KST, UTC+9) 기준 당일 날짜 추출
         const now = new Date();
-        const yyyymmdd = now.toISOString().slice(0, 10).replace(/-/g, '');
-        let url = `https://open.neis.go.kr/hub/mealServiceDietInfo?Type=json&pIndex=1&pSize=1&ATPT_OFCDC_SC_CODE=${appConfig.neisOfficeCode}&SD_SCHUL_CODE=${appConfig.neisSchoolCode}&MLSV_YMD=${yyyymmdd}`;
+        const kstOffset = 9 * 60; // KST는 UTC+9
+        const localOffset = now.getTimezoneOffset(); // 분 단위
+        const kstDate = new Date(now.getTime() + (kstOffset + localOffset) * 60000);
+        const yyyy = kstDate.getFullYear();
+        const mm = String(kstDate.getMonth() + 1).padStart(2, '0');
+        const dd = String(kstDate.getDate()).padStart(2, '0');
+        const yyyymmdd = `${yyyy}${mm}${dd}`;
+
+        // 중식(MMEAL_SC_CODE=2) 우선 요청
+        let url = `https://open.neis.go.kr/hub/mealServiceDietInfo?Type=json&pIndex=1&pSize=5&ATPT_OFCDC_SC_CODE=${appConfig.neisOfficeCode}&SD_SCHUL_CODE=${appConfig.neisSchoolCode}&MLSV_YMD=${yyyymmdd}&MMEAL_SC_CODE=2`;
         if (appConfig.neisApiKey) url += `&KEY=${appConfig.neisApiKey}`;
 
-        const res = await fetch(url);
-        const data = await res.json();
+        let res = await fetch(url);
+        let data = await res.json();
 
-        if (data.mealServiceDietInfo && data.mealServiceDietInfo[1].row) {
-          const row = data.mealServiceDietInfo[1].row[0];
-          const rawDish = row.DDISH_NM.replace(/[0-9\.\(\)\*]/g, '').trim();
+        // 만약 중식 지정(MMEAL_SC_CODE=2)으로 결과가 없을 경우, 전체 식사구분으로 재시도
+        if (!data.mealServiceDietInfo && !data.RESULT) {
+          let fallbackUrl = `https://open.neis.go.kr/hub/mealServiceDietInfo?Type=json&pIndex=1&pSize=5&ATPT_OFCDC_SC_CODE=${appConfig.neisOfficeCode}&SD_SCHUL_CODE=${appConfig.neisSchoolCode}&MLSV_YMD=${yyyymmdd}`;
+          if (appConfig.neisApiKey) fallbackUrl += `&KEY=${appConfig.neisApiKey}`;
+          res = await fetch(fallbackUrl);
+          data = await res.json();
+        }
+
+        if (data.mealServiceDietInfo && data.mealServiceDietInfo[1] && data.mealServiceDietInfo[1].row) {
+          const rows = data.mealServiceDietInfo[1].row;
+          // 중식(2) 우선, 없으면 첫 번째 식단 선택
+          const row = rows.find(r => r.MMEAL_SC_CODE === '2') || rows[0];
+          const rawDish = (row.DDISH_NM || '').replace(/[0-9\.\(\)\*]/g, '').trim();
           const dishes = rawDish.split('<br/>').map(d => d.trim()).filter(Boolean);
           const calories = row.CAL_INFO || '정보 없음';
 
           renderMealView({ calories: calories, dishes: dishes, isSample: false });
         } else {
-          renderMealView(DEFAULT_MEAL);
+          // 해당 일자에 급식이 없는 경우 (주말, 공휴일, 방학 등)
+          const dayOfWeek = kstDate.getDay();
+          const isWeekend = (dayOfWeek === 0 || dayOfWeek === 6);
+          if (isWeekend) {
+            renderMealView({
+              calories: '주말/휴일',
+              dishes: ['오늘은 급식이 제공되지 않는 날입니다.'],
+              isSample: false
+            });
+          } else {
+            renderMealView(DEFAULT_MEAL);
+          }
         }
       } catch (err) {
         console.warn('NEIS 급식 호출 실패, 샘플 표시:', err);
@@ -2020,8 +2050,8 @@
       const slogan = document.getElementById('settingSlogan').value.trim() || '오늘도 활기차고 행복한 하루 보내세요!';
       const excelUrl = document.getElementById('settingExcelUrl').value.trim() || '전체시간표/전체시간표.xlsx';
       const sheetUrl = document.getElementById('settingSheetUrl').value.trim();
-      const officeCode = document.getElementById('settingNeisEduOffice').value.trim() || 'B10';
-      const schoolCode = document.getElementById('settingNeisSchoolCode').value.trim();
+      const officeCode = document.getElementById('settingNeisEduOffice').value.trim() || 'S10';
+      const schoolCode = document.getElementById('settingNeisSchoolCode').value.trim() || '9022169';
       const apiKey = document.getElementById('settingNeisApiKey').value.trim();
 
       localStorage.setItem('class_grade', g);
